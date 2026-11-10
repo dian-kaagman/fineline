@@ -17,14 +17,14 @@
 
 ## 2. Conversion worker (apps/worker) - backend-engineer
 
-- [ ] 2.1 Scaffold the uv + FastAPI service with quality gates (Ruff lint and format, mypy, pytest), environment validation (token >= 32 chars, placeholder refused), `GET /health`, constant-time bearer-token check, docs routes disabled, no personal data in logs, `.env.example` (SR-005, SR-018, SR-020)
-- [ ] 2.2 Decoding and checks through Pillow only (JPEG, PNG, HEIF), pixel limit before decoding, no OpenCV decoders on raw bytes, EXIF orientation, metadata dropped, shortest side at least 800 px (AC-001, AC-004, SR-003)
-- [ ] 2.3 Line extraction: contrast equalisation, smoothing, edges plus tone contours traced to polylines, simplified, short strokes dropped, near ends joined, nearest-neighbour stroke order (AC-005)
-- [ ] 2.4 Fit to the drawing area and write the SVG: mm units, viewBox, one black unfilled path per stroke, nothing else (AC-005)
-- [ ] 2.5 Budget loop that coarsens until within max strokes and max total length, with an iteration cap and a final guarantee (AC-006)
-- [ ] 2.6 `POST /v1/convert` with error codes `photo_too_small`, `photo_too_many_pixels`, `photo_unreadable`, `no_drawable_content`, `validation_failed`, and at most 2 concurrent conversions with 503 `busy` (AC-004, AC-007, AC-008, AC-051, AC-053, AC-054, SR-003, SR-004)
-- [ ] 2.7 Performance test: a photo at the upload limits converts within the time limit on one CPU (AC-007)
-- [ ] 2.8 Dockerfile (pinned base, non-root, read-only friendly, `.dockerignore`) and `apps/worker/README.md` (SR-005, SR-021)
+- [x] 2.1 Scaffold the uv + FastAPI service with quality gates (Ruff lint and format, mypy, pytest), environment validation (token >= 32 chars, placeholder refused), `GET /health`, constant-time bearer-token check, docs routes disabled, no personal data in logs, `.env.example` (SR-005, SR-018, SR-020)
+- [x] 2.2 Decoding and checks through Pillow only (JPEG, PNG, HEIF), pixel limit before decoding, no OpenCV decoders on raw bytes, EXIF orientation, metadata dropped, shortest side at least 800 px (AC-001, AC-004, SR-003)
+- [x] 2.3 Line extraction: contrast equalisation, smoothing, edges plus tone contours traced to polylines, simplified, short strokes dropped, near ends joined, nearest-neighbour stroke order (AC-005)
+- [x] 2.4 Fit to the drawing area and write the SVG: mm units, viewBox, one black unfilled path per stroke, nothing else (AC-005)
+- [x] 2.5 Budget loop that coarsens until within max strokes and max total length, with an iteration cap and a final guarantee (AC-006)
+- [x] 2.6 `POST /v1/convert` with error codes `photo_too_small`, `photo_too_many_pixels`, `photo_unreadable`, `no_drawable_content`, `validation_failed`, and at most 2 concurrent conversions with 503 `busy` (AC-004, AC-007, AC-008, AC-051, AC-053, AC-054, SR-003, SR-004)
+- [x] 2.7 Performance test: a photo at the upload limits converts within the time limit on one CPU (AC-007)
+- [x] 2.8 Dockerfile (pinned base, non-root, read-only friendly, `.dockerignore`) and `apps/worker/README.md` (SR-005, SR-021)
 
 ## 3. Web (apps/web) - web-engineer
 

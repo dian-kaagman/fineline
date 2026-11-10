@@ -1,0 +1,73 @@
+[project]
+name = "fineline-worker"
+version = "0.1.0"
+description = "Fineline conversion worker: turns a photo into a pen-plottable SVG drawing"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.162.2",
+    "numpy>=2.5.4",
+    "opencv-python-headless>=5.0.0.93",
+    "pillow>=13.0.0",
+    "pillow-heif>=1.8.1",
+    "python-multipart>=0.0.33",
+    "uvicorn>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+    "scikit-image>=0.26.0",
+]
+
+[project.scripts]
+fineline-worker = "fineline_worker.__main__:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "N", "S", "SIM", "RUF", "C4", "PT", "RET", "ARG", "TID"]
+# Error classes are named after the error codes they answer with (PhotoTooSmall ->
+# photo_too_small), which reads better than an Error suffix on every one.
+ignore = ["N818"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert by design, and a made-up token is not a secret.
+"tests/**" = ["S101", "S105", "S106"]
+# The handlers narrow the exception type Starlette passes them with an assert.
+"src/fineline_worker/app.py" = ["S101"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# SR-003: OpenCV's decoders include TIFF, JPEG 2000, OpenEXR and more; only Pillow decodes.
+"cv2.imdecode".msg = "Decode photos with Pillow only (SR-003)"
+"cv2.imread".msg = "Decode photos with Pillow only (SR-003)"
+"cv2.imreadmulti".msg = "Decode photos with Pillow only (SR-003)"
+"cv2.VideoCapture".msg = "Decode photos with Pillow only (SR-003)"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+files = ["src", "tests", "scripts"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["skimage", "skimage.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "perf: performance test at the upload limits (AC-007); runs in CI, deselect with -m 'not perf'",
+]
