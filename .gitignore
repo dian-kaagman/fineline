@@ -6,7 +6,6 @@ __pycache__/
 
 # build output and caches
 dist/
-build/
 coverage/
 .pytest_cache/
 .mypy_cache/
@@ -15,8 +14,9 @@ coverage/
 .vite/
 
 # local data
-storage/
-data/
+/storage/
+/data/
+apps/api/storage/
 *.log
 
 # environment

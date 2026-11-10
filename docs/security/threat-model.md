@@ -60,7 +60,7 @@
 | `GET /api/v1/health` | api | no | Must not leak internals |
 | `POST /api/v1/admin/session` | api | no | Login; brute force target; CPU cost (scrypt) |
 | `/api/v1/admin/*` (orders, frames, settings, session) | api | admin cookie (+ CSRF header on unsafe methods) | All PII and all state changes |
-| `GET /api/v1/admin/orders/{id}/drawing.svg`, `/photo` | api | admin cookie | Files out on the admin origin; the SVG download changes status (see note N-1) |
+| `GET /api/v1/admin/orders/{id}/drawing.svg`, `/photo` | api | admin cookie | Files out on the admin origin; side-effect free. The status change is `POST .../drawing-download` (note N-1) |
 | `POST /api/v1/admin/frames`, `PUT .../frames/{id}/photo` | api | admin cookie + CSRF header | Files in (JPEG/PNG/WebP, 5 MB); frame photo later served publicly |
 | `POST /v1/convert`, `GET /health` | worker | bearer `WORKER_TOKEN` (convert) | Internal network only; parses untrusted images |
 | PostgreSQL :5432 | db | password | Internal only |
@@ -84,7 +84,7 @@ Only those that apply. Likelihood x impact: H/M/L.
 | T8 | Info disclosure | Preview token leaks via URL, logs, browser history, `Referer` or caches | web, api logs | M x M | SR-009, SR-016, SR-018 |
 | T9 | Spoofing | Admin password brute-forced or credential-stuffed over the internet | `POST /admin/session` | H x H | SR-010, SR-011 |
 | T10 | Spoofing | Session fixation, stolen or long-lived session cookie, cookie sent over HTTP | admin cookie | M x H | SR-012 |
-| T11 | Tampering | CSRF from a site the admin visits: change statuses, adjust stock, create frames (multipart forms are "simple" cross-site requests), trigger the status-changing SVG download | admin unsafe routes | M x M | SR-013, note N-1 |
+| T11 | Tampering | CSRF from a site the admin visits: change statuses, adjust stock, create frames (multipart forms are "simple" cross-site requests), trigger the status-changing SVG download (`POST .../drawing-download`) | admin unsafe routes | M x M | SR-013, note N-1 |
 | T12 | Elevation | A new admin route (or a file route) added later without the auth check: IDOR on orders, photos, addresses | `/api/v1/admin/*` | M x H | SR-014 |
 | T13 | Tampering / Info disclosure | Path traversal or arbitrary file read/write via storage keys or file names; storage directory served statically | B5 | L x H | SR-015 |
 | T14 | Tampering | Client sets price, status, stock or unknown fields (mass assignment); SQL injection | all bodies | M x H | SR-016 |
@@ -153,11 +153,11 @@ Type: **Spec** = observable behaviour; the lead should add a scenario citing the
 
 **SR-003 Safe decoding in the worker.**
 - Decode only with `PIL.Image.open(fp, formats=["JPEG", "PNG", "HEIF"])` (pillow-heif registered as a Pillow plugin). Never pass the raw bytes to `cv2.imdecode`/`cv2.imread` (they enable TIFF, JPEG 2000, OpenEXR, PFM and other decoders); hand OpenCV the decoded NumPy array only.
-- Check `width * height <= 50,000,000` (a 48 MP phone photo, 8064 x 6048, still passes) right after `open()` and **before** `load()`/`exif_transpose()`, and reject with `photo_unreadable`. Do not rely on Pillow's default bomb check: setting `Image.MAX_IMAGE_PIXELS = 50_000_000` alone only *warns* between 50 and 100 MP; verified locally with Pillow 13: a 68-byte crafted PNG declaring 30,000 x 30,000 px is only stopped at the 2x threshold.
+- Check `width * height <= 50,000,000` (a 48 MP phone photo, 8064 x 6048, still passes) right after `open()` and **before** `load()`/`exif_transpose()`, and reject with `photo_too_many_pixels` (worker 400, mapped by the API to public 400 `photo_too_many_pixels`; BR-001 "at most 50 MP"). Do not rely on Pillow's default bomb check: setting `Image.MAX_IMAGE_PIXELS = 50_000_000` alone only *warns* between 50 and 100 MP; verified locally with Pillow 13: a 68-byte crafted PNG declaring 30,000 x 30,000 px is only stopped at the 2x threshold.
 - `ImageFile.LOAD_TRUNCATED_IMAGES` stays `False`; use `Image.draft()` for JPEG to decode at reduced size; any decoder exception -> `photo_unreadable` (no stack trace in the response).
 - Applies to: worker. Overlaps BR-001.
-- Spec: "AC-xxx A small PNG whose header declares 30,000 x 30,000 pixels is refused as unreadable within 2 seconds and the service keeps answering".
-- Verify: pytest with crafted-header PNG and JPEG (built in the test with `struct`/`zlib`, a few bytes), a TIFF and a PSD sent to `/v1/convert` -> 400 `photo_unreadable`, time < 2 s; unit test that the pixel check runs for every format; a grep-style test (or Ruff banned-API rule) forbidding `cv2.imdecode`/`cv2.imread`.
+- Spec: "AC-xxx A small PNG whose header declares 30,000 x 30,000 pixels is refused with `photo_too_many_pixels` within 2 seconds and the service keeps answering".
+- Verify: pytest with crafted-header PNG and JPEG (built in the test with `struct`/`zlib`, a few bytes) sent to `/v1/convert` -> 400 `photo_too_many_pixels`, time < 2 s; a TIFF and a PSD -> 400 `photo_unreadable`; an API inject test that the worker's `photo_too_many_pixels` is answered as public 400 `photo_too_many_pixels`; unit test that the pixel check runs for every format; a grep-style test (or Ruff banned-API rule) forbidding `cv2.imdecode`/`cv2.imread`.
 - Priority: Must.
 
 **SR-004 Bounded conversion resources.**
@@ -208,10 +208,10 @@ Type: **Spec** = observable behaviour; the lead should add a scenario citing the
 **SR-009 Preview token and indistinguishable answers.**
 - Token: 32 bytes from `crypto.randomBytes`, base64url (43 chars). Only `SHA-256(token)` is stored; compare with `crypto.timingSafeEqual`.
 - The token appears only in the 201 response body of `POST /drawings` (served with `Cache-Control: no-store`) and the `POST /orders` request body: never in a URL, `Location` header, log line or error message. The web app keeps it in memory or `sessionStorage`, never `localStorage` or the URL.
-- `POST /orders` checks in this order: body schema -> drawing exists **and** token matches **and** not expired -> not already ordered -> frame. Unknown ID, wrong token, expired drawing and malformed token all give the identical 404 `drawing_not_found` (same body, no timing short-cut such as skipping the hash when the ID is unknown). `drawing_already_ordered` (409) is only returned to someone holding the valid token, so it is not an oracle.
+- `POST /orders` checks in this order: (1) body schema -> (2) drawing exists **and** token matches, else 404 `drawing_not_found` -> (3) already ordered: 200 with the original order confirmation (BR-018 replay; also after the 24 h expiry, and no second order, no stock taken) -> (4) expired: the same 404 `drawing_not_found` -> (5) frame. Unknown ID, wrong token, malformed token and an expired unordered drawing all give the identical 404 (same body, no timing short-cut such as skipping the hash when the ID is unknown). The replay only answers someone holding the valid token, so whether a drawing exists or was ordered is never revealed to anyone else; the replay returns only the confirmation fields (order number, estimated delivery date, frame name, price), never customer details.
 - No public route returns a photo or drawing by ID (BR-013); a route-table test asserts it.
 - Applies to: api, web. Overlaps BR-013, AC-010, AC-022.
-- Spec: "AC-xxx Ordering an already-ordered drawing with a wrong token gives 'This preview is no longer available', not 'already ordered'" (AC-010 and AC-022 cover the rest).
+- Spec: "AC-xxx Ordering an already-ordered drawing with a wrong token gives 'This preview is no longer available', not the order confirmation" (AC-010 and AC-022 cover the rest).
 - Verify: inject tests for each case comparing full response bodies; unit test of token generation length/encoding; log-capture test (SR-018) asserting the token never appears.
 - Priority: Must.
 
@@ -245,13 +245,13 @@ Type: **Spec** = observable behaviour; the lead should add a scenario citing the
 - Priority: Must.
 
 **SR-013 CSRF defence.**
-- Every unsafe request under `/api/v1/admin/` (POST, PUT, PATCH, DELETE), **including** `POST /admin/session` (login CSRF) and `DELETE /admin/session`, requires `X-Requested-With: fineline` exactly. Without it: 403 `csrf_failed`, checked in `onRequest` before any body or multipart parsing. Multipart frame uploads matter most here, because a cross-site `<form enctype="multipart/form-data">` needs no preflight.
-- The status-changing SVG download must not be a plain cross-site-triggerable GET (see note N-1).
+- Every unsafe request under `/api/v1/admin/` (POST, PUT, PATCH, DELETE), **including** `POST /admin/session` (login CSRF) and `DELETE /admin/session`, requires `X-Requested-With: fineline` exactly. Without it: 403 `csrf_failed`, checked in `onRequest` before any body or multipart parsing. On every admin route except login, authentication is checked first: no valid session -> 401 `unauthenticated`, even when the header is also missing; only an authenticated request without the header gets 403 `csrf_failed`. On `POST /admin/session` the header check applies on its own (403). Multipart frame uploads matter most here, because a cross-site `<form enctype="multipart/form-data">` needs no preflight.
+- The status change on download is `POST /admin/orders/{id}/drawing-download` (header required); `GET .../drawing.svg` has no side effects (note N-1, accepted).
 - CORS: in production no CORS headers at all (same origin via nginx). `CORS_ORIGIN`, when set for split-origin development, is one exact origin; never `*`, never reflect the request `Origin`; startup refuses `*`. Unknown content types stay rejected (Fastify's 415), so `text/plain` "JSON" isn't parsed.
 - SameSite=Strict (SR-012) is the second layer, not the only one.
 - Applies to: api. Overlaps BR-011.
 - Spec: "AC-xxx Adding a frame, adjusting stock or changing a status without the app's request header is refused (403) and changes nothing".
-- Verify: inject tests for every unsafe admin route (driven by the route table, see SR-014) without the header -> 403 and nothing changed; a preflight `OPTIONS` with `Origin: https://evil.example` gets no `Access-Control-Allow-Origin`.
+- Verify: inject tests for every unsafe admin route (driven by the route table, see SR-014) with a valid session but without the header -> 403 and nothing changed, and without a session and without the header -> 401; a preflight `OPTIONS` with `Origin: https://evil.example` gets no `Access-Control-Allow-Origin`.
 - Priority: Must.
 
 **SR-014 One authentication gate for every admin route.**
@@ -369,6 +369,8 @@ Type: **Spec** = observable behaviour; the lead should add a scenario citing the
 - Priority: Before deploy.
 
 ## Notes for the lead: design and contract changes
+
+Status: N-1 to N-7 and N-9 to N-12 accepted by the lead; N-8 resolved with a separate code `photo_too_many_pixels` (BR-001: at most 50 MP); N-5 superseded by the BR-018 replay (no `drawing_already_ordered` code; check order in SR-009). Kept below for the record.
 
 - **N-1 State change on a GET (`GET /admin/orders/{id}/drawing.svg` moves `received` -> `drawing`).** Two problems:
   1. *Functional:* AC-030 says the admin "sees ... the drawing" on the order detail. If the web app shows it with `<img src=".../drawing.svg">`, just opening the order moves it to `drawing`.

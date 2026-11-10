@@ -13,7 +13,7 @@ Each part has a Dockerfile (multi-stage, non-root user). `docker-compose.yml` at
 
 ## Consequences
 
-- One command (`docker compose up --build`) runs the whole shop locally.
+- After creating `.env` from `.env.example` (generating `WORKER_TOKEN` and the admin password hash, see the README), one command (`docker compose up --build`) runs the whole shop locally. A dev override (`docker-compose.dev.yml`) publishes PostgreSQL on 127.0.0.1 only, for running the parts natively.
 - Choosing hosting later means picking where the four containers and the two volumes live (or swapping the storage implementation, ADR 0006); no code change expected.
 
 ## Alternatives considered

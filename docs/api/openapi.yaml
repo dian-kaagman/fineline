@@ -12,6 +12,8 @@ info:
     - Calendar dates (estimated delivery date) are `YYYY-MM-DD`, meaning the date in Europe/Amsterdam.
       Timestamps are ISO 8601 in UTC (`2026-11-06T10:15:00Z`).
     - Lengths of drawings and frames are millimetres, in fields ending in `Mm`.
+    - Precedence for admin calls: authentication (401) is checked before the CSRF header (403), except on
+      login, which needs only the header.
     - Every error response uses the `Error` schema. `code` is stable and machine-readable;
       `message` is safe to show to a person and never contains stack traces or internals.
     - Admin operations (`/api/v1/admin/...`, except `POST /api/v1/admin/session`) require the
@@ -143,6 +145,7 @@ paths:
       operationId: getFramePhoto
       security: []
       summary: Photo of a frame model (public product image, metadata stripped - SR-023; nosniff and sandbox CSP - SR-007)
+      description: Served for every existing frame, including frames with stock 0 (the admin tool shows them too).
       parameters:
         - $ref: "#/components/parameters/FrameId"
       responses:
@@ -166,9 +169,9 @@ paths:
         (BR-006), assigns the order number (BR-007) and the estimated delivery date from the
         current lead time (BR-008). Status becomes `received` (BR-009).
 
-        Checks run in this order (SR-009): body schema -> drawing exists, token matches and not
-        expired (else 404 `drawing_not_found`, identical for every reason) -> already ordered ->
-        frame. If the drawing was already ordered with this valid token (for example the customer
+        Checks run in this order (SR-009): body schema -> drawing exists and token matches (else
+        404 `drawing_not_found`) -> already ordered (replay, below; works also after the 24 h
+        expiry) -> not expired (else the same 404 `drawing_not_found`) -> frame. If the drawing was already ordered with this valid token (for example the customer
         retried after a lost response), the original confirmation is returned with 200 and nothing
         changes; the request's frame and details are ignored.
       requestBody:
@@ -206,7 +209,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422":
-          description: "`frame_not_found`: the frame does not exist."
+          description: "`frame_not_found`: the frame does not exist (stock 0 is `frame_sold_out`)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -348,7 +351,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OrderDetail" }
         "400":
-          description: "`validation_failed` (bad date, or before the order date)."
+          description: "`validation_failed` (malformed date) or `delivery_date_before_order_date`."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -448,7 +451,10 @@ paths:
       tags: [admin-orders]
       operationId: changeOrderStatus
       summary: Move an order to another status
-      description: Only transitions in BR-009 are allowed. Cancelling returns one frame to stock (BR-006).
+      description: |
+        Only transitions in BR-009 are allowed. `drawing` cannot be set here: an order moves from
+        `received` to `drawing` only through `POST .../drawing-download`, so `allowedNextStatuses`
+        of a `received` order is `[cancelled]`. Cancelling returns one frame to stock (BR-006).
       parameters:
         - $ref: "#/components/parameters/OrderId"
       requestBody:
@@ -525,7 +531,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AdminFrame" }
         "400":
-          description: "`validation_failed` (with `details`), `frame_too_small`, `photo_missing`, `photo_unsupported_type`."
+          description: |
+            `validation_failed` with one `details` entry per problem, all reported together: missing or
+            invalid fields, a missing photo (`photo`), a size smaller than the drawing area (`widthMm` /
+            `heightMm`, BR-006), a photo that is not JPEG, PNG or WebP (`photo`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -813,7 +822,11 @@ components:
           description: "NL: 4 digits + 2 letters (`1234 AB`, space optional); BE: 4 digits."
           example: 1234 AB
         city: { type: string, minLength: 1, maxLength: 100 }
-        country: { type: string, enum: [NL, BE], description: ISO 3166-1 alpha-2; delivery to NL and BE only (BR-007). }
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          example: NL
+          description: ISO 3166-1 alpha-2. Only NL and BE are delivered to (BR-007); any other well-formed code is answered 400 `country_not_supported` with `details` for `address.country`.
 
     PlaceOrderRequest:
       type: object
@@ -837,12 +850,16 @@ components:
 
     OrderConfirmation:
       type: object
-      required: [orderNumber, estimatedDeliveryDate, frameName, priceCents]
+      required: [orderNumber, estimatedDeliveryDate, frameName, priceCents, customerName, address]
       properties:
-        orderNumber: { type: string, pattern: "^FL-\\d{4}-\\d{4}$", example: FL-2026-0042 }
+        orderNumber: { type: string, pattern: "^FL-\\d{4}-\\d{4,}$", example: FL-2026-0042 }
         estimatedDeliveryDate: { type: string, format: date, example: "2026-11-17" }
         frameName: { type: string, example: Oak A4 }
         priceCents: { type: integer, example: 4995 }
+        customerName: { type: string, description: As stored on the order. }
+        address:
+          $ref: "#/components/schemas/Address"
+          description: The delivery address as stored on the order (on a replay this is the original, not the retried request's).
 
     OrderSummary:
       type: object

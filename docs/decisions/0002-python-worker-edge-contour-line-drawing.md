@@ -10,14 +10,15 @@ The riskiest must-have: turn a customer's photo into a portrait made of black pe
 ## Decision
 
 1. **Python worker.** The conversion runs in `apps/worker`, a stateless FastAPI service using OpenCV, NumPy, Pillow and pillow-heif, reachable only by the API over the private network with a shared bearer token. The TypeScript image ecosystem has no equivalent of OpenCV's edge detection, contour tracing, CLAHE and bilateral filtering, and HEIC decoding (BR-001) is mature in pillow-heif. This is a clearly better drawing for little cost: one more small container.
-2. **Approach: edge-and-contour line art.** Canny edges (thresholds from the image median) for outlines and features, plus a few iso-luminance contour lines of a blurred image for shading - all as open strokes, never fills. Polylines are simplified (Ramer-Douglas-Peucker), very short strokes dropped, near-touching ends joined, and strokes ordered by greedy nearest-neighbour to keep pen-up travel short. Output is scaled to fit and centred in the drawing area in millimetres.
+2. **Approach: edge-and-contour line art.** Canny edges (thresholds from the image median) for outlines and features, traced as open polylines along the 1-pixel edge graph (not as closed contours, which would draw every edge twice), plus a few iso-luminance contour lines of a blurred image for shading with segments along the image border removed - all as strokes, never fills. A photo that yields fewer than 20 strokes or under 0.5 m after filtering has no drawable content and is refused. Polylines are simplified (Ramer-Douglas-Peucker), very short strokes dropped, near-touching ends joined, and strokes ordered by greedy nearest-neighbour to keep pen-up travel short. Output is scaled to fit and centred in the drawing area in millimetres.
 3. **Drawing time.** A hard stroke budget (BR-004, default 25 m total length and 1,500 strokes, configurable) enforced by a coarsening loop (raise thresholds, fewer contour levels, longer minimum stroke, stronger simplification) with a final guarantee that drops the shortest strokes. The API re-validates every result (elements, colours, bounds, budget) before storing it.
 4. **Synchronous call.** The API calls the worker per upload and waits (timeout 30 s by default); the web app shows progress. At a handful of orders a day, a job queue is not worth it yet.
 
 ## Consequences
 
 - Recognisable portraits with a sketch look; quality on real photos must be tuned by the owner with real photos on the arm (parameters are kept in one module).
-- Deterministic output for the same input, which makes tests and BR-005 ("the preview is the order") straightforward: the API stores the exact SVG it showed.
+- A plan-review prototype of this pipeline converted a 12 MP portrait in 0.64 s on one core (315 strokes, 13.5 m) and coarsened a budget-busting texture from 4,128 strokes / 59.6 m to 1,078 / 17.3 m in 0.73 s, so the 30 s limit has more than tenfold headroom.
+- Deterministic output for the same input and library versions, which makes tests and BR-005 ("the preview is the order") straightforward: the API stores the exact SVG it showed.
 - Python joins the stack (uv, Ruff, mypy, pytest in CI).
 
 ## Alternatives considered

@@ -74,7 +74,7 @@ The system MUST NOT sell more frames than are in stock, even when orders arrive 
 - **AND** that customer can choose "Walnut 30x40" and place the order
 
 ### Requirement: The preview is what is ordered
-The order SHALL store exactly the drawing the customer previewed; it MUST NOT be regenerated after ordering. An order MUST be rejected when its preview is unknown or expired or the preview token is missing or wrong, with one identical "no longer available" answer for all these cases, also when the preview was already ordered (BR-005, BR-010, BR-013, SR-009).
+The order SHALL store exactly the drawing the customer previewed; it MUST NOT be regenerated after ordering. An order MUST be rejected when its preview is unknown or expired or the preview token is missing or wrong, with one identical "no longer available" answer for all these cases, also when a preview that was already ordered is named without its valid token (BR-005, BR-010, BR-013, SR-009).
 
 #### Scenario: AC-021 Ordered drawing is identical to the preview
 - **GIVEN** a customer saw a preview and placed order FL-2026-0042 with it
@@ -86,7 +86,7 @@ The order SHALL store exactly the drawing the customer previewed; it MUST NOT be
 - **WHEN** someone places an otherwise valid order naming that preview without its preview token, or with a wrong one
 - **THEN** the order is rejected with "This preview is no longer available. Please upload your photo again."
 - **AND** no order is created and no frame stock is taken
-- **AND** the answer is identical, in status and content, to the answer for an unknown preview, an expired preview and a preview that has already been ordered
+- **AND** the answer is identical, in status and content, to the answer for an unknown preview, an expired preview and a preview that has already been ordered, when named without its preview token
 
 ### Requirement: Placing the same order again
 When an order is placed again for a drawing that has already been ordered, with that drawing's valid preview token, the system SHALL return the original confirmation (order number, price and estimated delivery date) and MUST NOT create an order, take stock or change the existing order; the frame and details in the repeated request are ignored (BR-018).
