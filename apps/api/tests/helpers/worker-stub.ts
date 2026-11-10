@@ -8,6 +8,8 @@ export interface StubReply {
   body?: unknown;
   headers?: Record<string, string>;
   delayMs?: number;
+  /** Raw body sent in chunks without a Content-Length (overrides `body`). */
+  chunkedBody?: Buffer;
 }
 
 export interface StubCall {
@@ -65,6 +67,16 @@ export async function startWorkerStub(
       const reply = await stub.reply(call);
       if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
       res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
+      if (reply.chunkedBody) {
+        const data = reply.chunkedBody;
+        for (let i = 0; i < data.length && !res.destroyed; i += 64 * 1024) {
+          if (!res.write(data.subarray(i, i + 64 * 1024))) {
+            await new Promise((r) => res.once("drain", r).once("close", r));
+          }
+        }
+        res.end();
+        return;
+      }
       res.end(reply.body === undefined ? "" : JSON.stringify(reply.body));
     })();
   });

@@ -1,6 +1,6 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Executor } from "../../db/client.js";
-import { drawings, frames, orderNumberCounters, orders } from "../../db/schema.js";
+import { drawings, orderNumberCounters, orders } from "../../db/schema.js";
 import type { OrderStatus } from "../../domain/order-status.js";
 
 export type OrderRow = typeof orders.$inferSelect;
@@ -26,7 +26,8 @@ export async function insertOrder(db: Executor, row: NewOrderRow): Promise<Order
 
 const orderWithJoins = {
   order: orders,
-  frameName: frames.name,
+  // The frame as ordered (snapshot), not the frame's current name (Q-41).
+  frameName: orders.frameName,
   drawing: {
     widthMm: drawings.widthMm,
     heightMm: drawings.heightMm,
@@ -36,6 +37,7 @@ const orderWithJoins = {
     photoKey: drawings.photoKey,
     photoContentType: drawings.photoContentType,
     photoDeletedAt: drawings.photoDeletedAt,
+    svgDeletedAt: drawings.svgDeletedAt,
   },
 };
 
@@ -51,6 +53,7 @@ export type OrderWithJoins = {
     photoKey: string;
     photoContentType: string;
     photoDeletedAt: Date | null;
+    svgDeletedAt: Date | null;
   };
 };
 
@@ -58,7 +61,6 @@ function selectOrders(db: Executor) {
   return db
     .select(orderWithJoins)
     .from(orders)
-    .innerJoin(frames, eq(frames.id, orders.frameId))
     .innerJoin(drawings, eq(drawings.id, orders.drawingId));
 }
 
@@ -115,4 +117,35 @@ export async function findClosedOrderPhotos(
     .from(orders)
     .innerJoin(drawings, eq(drawings.id, orders.drawingId))
     .where(sql`${orders.closedAt} <= ${closedBefore} and ${drawings.photoDeletedAt} is null`);
+}
+
+/** Locks the order with this number for erasure. */
+export async function lockOrderByNumber(
+  db: Executor,
+  orderNumber: string,
+): Promise<OrderRow | undefined> {
+  const rows = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.orderNumber, orderNumber))
+    .for("update");
+  return rows[0];
+}
+
+export const ERASED = "[erased]";
+
+/** Blanks the customer's name, email and address; keeps number, price, dates, status and country. */
+export async function eraseCustomerDetails(db: Executor, id: string, now: Date): Promise<void> {
+  await db
+    .update(orders)
+    .set({
+      customerName: ERASED,
+      customerEmail: ERASED,
+      street: ERASED,
+      houseNumber: ERASED,
+      postalCode: ERASED,
+      city: ERASED,
+      erasedAt: now,
+    })
+    .where(eq(orders.id, id));
 }

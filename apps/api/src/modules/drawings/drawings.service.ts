@@ -61,38 +61,41 @@ export function createDrawingsService(deps: DrawingsServiceDeps) {
    * after the worker succeeded and the SVG passed the check, so a rejected upload leaves nothing
    * behind (SR-015).
    */
-  async function createDrawing(photo: Buffer, log: FastifyBaseLogger): Promise<DrawingPreview> {
-    const contentType = detectCustomerPhotoType(photo);
-    if (!contentType) throw unsupportedPhotoType();
-
+  /**
+   * Takes a conversion slot before the upload is read, so at most `MAX_CONCURRENT_CONVERSIONS`
+   * uploads are ever buffered (SR-004 amended). Returns the release function.
+   */
+  function startConversion(log: FastifyBaseLogger): () => void {
     const release = limiter.tryAcquire();
     if (!release) {
       log.warn({ event: "conversion_busy", source: "api_limit" }, "conversion limit reached");
       throw conversionUnavailable(DEFAULT_RETRY_AFTER_SECONDS);
     }
+    return release;
+  }
+
+  /** Call while holding a slot from `startConversion`. */
+  async function createDrawing(photo: Buffer, log: FastifyBaseLogger): Promise<DrawingPreview> {
+    const contentType = detectCustomerPhotoType(photo);
+    if (!contentType) throw unsupportedPhotoType();
+
     const drawingId = randomUUID();
-    let svg: string;
-    try {
-      const outcome = await worker.convert({ photo, contentType, ...limits });
-      switch (outcome.kind) {
-        case "ok":
-          svg = outcome.svg;
-          break;
-        case "rejected":
-          throw new AppError(400, outcome.code, REJECTION_MESSAGES[outcome.code]);
-        case "busy":
-          log.warn({ event: "conversion_busy", source: "worker" }, "worker busy");
-          throw conversionUnavailable(outcome.retryAfterSeconds);
-        case "failed":
-          log.error(
-            { event: "conversion_failed", reason: outcome.reason, drawingId },
-            "conversion failed",
-          );
-          throw conversionUnavailable();
-      }
-    } finally {
-      release();
+    const outcome = await worker.convert({ photo, contentType, ...limits });
+    if (outcome.kind === "rejected") {
+      throw new AppError(400, outcome.code, REJECTION_MESSAGES[outcome.code]);
     }
+    if (outcome.kind === "busy") {
+      log.warn({ event: "conversion_busy", source: "worker" }, "worker busy");
+      throw conversionUnavailable(outcome.retryAfterSeconds);
+    }
+    if (outcome.kind === "failed") {
+      log.error(
+        { event: "conversion_failed", reason: outcome.reason, drawingId },
+        "conversion failed",
+      );
+      throw conversionUnavailable();
+    }
+    const svg = outcome.svg;
 
     const svgBytes = Buffer.from(svg, "utf8");
     const check = checkDrawingSvg(svgBytes, limits);
@@ -141,7 +144,7 @@ export function createDrawingsService(deps: DrawingsServiceDeps) {
     };
   }
 
-  return { createDrawing };
+  return { startConversion, createDrawing };
 }
 
 export type DrawingsService = ReturnType<typeof createDrawingsService>;

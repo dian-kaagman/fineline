@@ -67,6 +67,8 @@ export async function buildApp(deps: AppDeps): Promise<App> {
     trustProxy:
       typeof config.trustProxy === "number" ? hopCount(config.trustProxy) : config.trustProxy,
     bodyLimit: JSON_BODY_LIMIT,
+    // Bounds slow uploads when the API is reached directly (nginx has its own body timeout).
+    requestTimeout: 120_000,
   });
   if (deps.onRoute) app.addHook("onRoute", deps.onRoute);
 
@@ -79,6 +81,8 @@ export async function buildApp(deps: AppDeps): Promise<App> {
   // JSON parser that accepts an empty body (bodyless POST/DELETE with a JSON content type).
   const defaultJson = app.getDefaultJsonParser("error", "error");
   app.removeContentTypeParser("application/json");
+  // JSON only: a text/plain "order" answers 415 like any other wrong content type (contract).
+  app.removeContentTypeParser("text/plain");
   app.addContentTypeParser(
     "application/json",
     { parseAs: "string", bodyLimit: JSON_BODY_LIMIT },
@@ -125,7 +129,7 @@ export async function buildApp(deps: AppDeps): Promise<App> {
   await app.register(healthRoutes(db));
   await app.register(drawingsRoutes(services.drawings));
   await app.register(publicFramesRoutes(services.frames));
-  await app.register(publicOrdersRoutes(services.orders));
+  await app.register(publicOrdersRoutes(services.orders, clock));
   await app.register(
     adminPlugin({
       auth: services.auth,

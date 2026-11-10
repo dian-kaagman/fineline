@@ -16,6 +16,9 @@ export interface MultipartOptions {
   tooLarge: () => AppError;
 }
 
+export const unsupportedMediaType = () =>
+  new AppError(415, "unsupported_media_type", "This content type is not accepted here.");
+
 const LIMIT_CODES = new Set([
   "FST_PARTS_LIMIT",
   "FST_FILES_LIMIT",
@@ -33,7 +36,7 @@ export async function readMultipart(
   options: MultipartOptions,
 ): Promise<MultipartForm> {
   const form: MultipartForm = { fields: new Map(), file: undefined, problems: [] };
-  if (!request.isMultipart()) return form;
+  if (!request.isMultipart()) throw unsupportedMediaType();
   try {
     const parts = request.parts({
       limits: {
@@ -62,7 +65,7 @@ export async function readMultipart(
           if (size > options.maxFileBytes) throw options.tooLarge();
           chunks.push(chunk as Buffer);
         }
-        form.file = Buffer.concat(chunks);
+        form.file = Buffer.concat(chunks, size);
       } else if (!options.fieldNames.includes(part.fieldname)) {
         form.problems.push({ field: "body", message: "Unexpected field" });
       } else if (form.fields.has(part.fieldname)) {
@@ -80,10 +83,9 @@ export async function readMultipart(
         { field: "body", message: "Only one file and the listed fields are allowed" },
       ]);
     }
-    if (code === "FST_MP_PREMATURE_CLOSE") {
-      throw validationFailed([{ field: "body", message: "The upload was incomplete" }]);
-    }
-    throw err;
+    // Anything else thrown while parsing is a broken or cut-off body from the client (busboy's
+    // "Unexpected end of multipart data", "Malformed part header", an aborted request): a 400.
+    throw validationFailed([{ field: "body", message: "The upload was incomplete or malformed" }]);
   }
   return form;
 }

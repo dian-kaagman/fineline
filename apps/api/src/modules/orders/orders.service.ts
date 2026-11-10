@@ -111,6 +111,9 @@ export function createOrdersService({ db, clock }: OrdersServiceDeps) {
         orderNumber: formatOrderNumber(amsterdamYearOf(now), sequence),
         drawingId: drawing.id,
         frameId: frame.id,
+        frameName: taken.name,
+        frameWidthMm: taken.widthMm,
+        frameHeightMm: taken.heightMm,
         status: "received",
         customerName: input.customer.name,
         customerEmail: input.customer.email,
@@ -122,7 +125,7 @@ export function createOrdersService({ db, clock }: OrdersServiceDeps) {
         statusChangedAt: now,
         createdAt: now,
       });
-      return { replay: false, row: { order, frameName: taken.name } };
+      return { replay: false, row: { order, frameName: order.frameName } };
     });
 
     if (result.replay) {

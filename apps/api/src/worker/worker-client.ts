@@ -80,14 +80,10 @@ export class HttpWorkerClient implements ConversionClient {
       return { kind: "failed", reason: name === "TimeoutError" ? "timeout" : "connection_error" };
     }
 
-    let raw: string;
-    try {
-      raw = await response.text();
-    } catch {
-      return { kind: "failed", reason: "response_read_error" };
-    }
-    if (Buffer.byteLength(raw) > MAX_RESPONSE_BYTES)
-      return { kind: "failed", reason: "response_too_large" };
+    const read = await readCapped(response, MAX_RESPONSE_BYTES);
+    if (read.kind === "too_large") return { kind: "failed", reason: "response_too_large" };
+    if (read.kind === "error") return { kind: "failed", reason: "response_read_error" };
+    const raw = read.text;
     let body: unknown;
     try {
       body = JSON.parse(raw);
@@ -114,6 +110,37 @@ export class HttpWorkerClient implements ConversionClient {
     const safeCode = code && /^[a-z_]{1,40}$/.test(code) ? `_${code}` : "";
     return { kind: "failed", reason: `worker_status_${response.status}${safeCode}` };
   }
+}
+
+/** Reads a response body, giving up as soon as it passes `max` bytes (never buffers more). */
+async function readCapped(
+  response: Response,
+  max: number,
+): Promise<{ kind: "ok"; text: string } | { kind: "too_large" } | { kind: "error" }> {
+  const declared = Number(response.headers.get("content-length") ?? "0");
+  if (declared > max) {
+    await response.body?.cancel().catch(() => undefined);
+    return { kind: "too_large" };
+  }
+  if (!response.body) return { kind: "ok", text: "" };
+  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) {
+        await reader.cancel().catch(() => undefined);
+        return { kind: "too_large" };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { kind: "error" };
+  }
+  return { kind: "ok", text: Buffer.concat(chunks, size).toString("utf8") };
 }
 
 /**

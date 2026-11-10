@@ -16,9 +16,36 @@ export function stripImageMetadata(bytes: Buffer, type: FramePhotoType): Buffer 
   }
 }
 
-// JPEG markers kept before the scan: APP0 (JFIF), APP2 (ICC profile), APP14 (Adobe colour transform)
-// and every non-APP structural segment. Dropped: APP1 (EXIF/XMP), APP3-APP13 (incl. IPTC), APP15, COM.
+// JPEG segments kept: APP0 (JFIF), APP2 ICC profiles, APP14 (Adobe colour transform) and every
+// non-APP structural segment. Dropped: APP1 (EXIF/XMP), APP2 MPF (index of appended pictures),
+// APP3-APP13 (incl. IPTC), APP15, COM, and everything after the end-of-image marker (motion-photo
+// videos and appended pictures with their own metadata).
 const KEPT_APP_MARKERS = new Set([0xe0, 0xe2, 0xee]);
+const MPF_SIGNATURE = Buffer.from("MPF\0", "latin1");
+
+function keepJpegSegment(marker: number, segment: Buffer): boolean {
+  if (marker === 0xfe) return false;
+  if (marker < 0xe0 || marker > 0xef) return true;
+  if (!KEPT_APP_MARKERS.has(marker)) return false;
+  return !(marker === 0xe2 && segment.subarray(4, 8).equals(MPF_SIGNATURE));
+}
+
+/** End of the entropy-coded data that starts at `pos`: the next marker other than stuffing or RSTn. */
+function scanEnd(bytes: Buffer, pos: number): number {
+  let i = pos;
+  while (i < bytes.length - 1) {
+    if (bytes[i] === 0xff) {
+      const next = bytes[i + 1] as number;
+      if (next === 0x00 || (next >= 0xd0 && next <= 0xd7)) {
+        i += 2;
+        continue;
+      }
+      return i;
+    }
+    i += 1;
+  }
+  return bytes.length;
+}
 
 function stripJpeg(bytes: Buffer): Buffer | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
@@ -31,6 +58,7 @@ function stripJpeg(bytes: Buffer): Buffer | null {
     const marker = bytes[pos + 1];
     if (marker === undefined) return null;
     if (marker === 0xd9) {
+      // End of image: anything after it is dropped.
       out.push(bytes.subarray(pos, pos + 2));
       return Buffer.concat(out);
     }
@@ -44,15 +72,16 @@ function stripJpeg(bytes: Buffer): Buffer | null {
     const length = bytes.readUInt16BE(pos + 2);
     if (length < 2 || pos + 2 + length > bytes.length) return null;
     const segment = bytes.subarray(pos, pos + 2 + length);
-    if (marker === 0xda) {
-      // Start of scan: entropy-coded data and everything after it is image data; copy verbatim.
-      out.push(bytes.subarray(pos));
-      return Buffer.concat(out);
-    }
-    const isApp = marker >= 0xe0 && marker <= 0xef;
-    const keep = isApp ? KEPT_APP_MARKERS.has(marker) : marker !== 0xfe;
-    if (keep) out.push(segment);
+    if (keepJpegSegment(marker, segment)) out.push(segment);
     pos += 2 + length;
+    if (marker === 0xda) {
+      // Start of scan: copy the entropy-coded data up to the next marker (progressive JPEGs have
+      // several scans, with tables between them).
+      const end = scanEnd(bytes, pos);
+      if (end >= bytes.length) return null;
+      out.push(bytes.subarray(pos, end));
+      pos = end;
+    }
   }
   return null;
 }

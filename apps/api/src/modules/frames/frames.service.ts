@@ -17,6 +17,7 @@ import {
 } from "./frames.repository.js";
 import {
   createFrameFields,
+  MAX_STOCK,
   sizeProblems,
   stockAdjustmentBody,
   toAdminFrame,
@@ -84,9 +85,14 @@ export function createFramesService({ db, storage, clock, drawingArea }: FramesS
       log: FastifyBaseLogger,
     ) {
       const problems: ErrorDetail[] = [...readProblems];
-      const parsed = createFrameFields.safeParse(Object.fromEntries(fields));
+      const raw = Object.fromEntries(fields);
+      const parsed = createFrameFields.safeParse(raw);
       if (!parsed.success) problems.push(...issuesToDetails(parsed.error.issues));
-      else problems.push(...sizeProblems(drawingArea, parsed.data.widthMm, parsed.data.heightMm));
+      // Size against the drawing area for each size that parsed, also when other fields are wrong,
+      // so every problem is reported together (contract).
+      const width = createFrameFields.shape.widthMm.safeParse(raw.widthMm);
+      const height = createFrameFields.shape.heightMm.safeParse(raw.heightMm);
+      problems.push(...sizeProblems(drawingArea, width.data, height.data));
       const photo = cleanFramePhoto(file);
       if ("field" in photo) problems.push(photo);
       if (problems.length > 0 || !parsed.success || "field" in photo)
@@ -144,9 +150,17 @@ export function createFramesService({ db, storage, clock, drawingArea }: FramesS
 
     async adjustStock(id: string, body: unknown) {
       const { delta } = parseOrThrow(stockAdjustmentBody, body);
-      const row = await adjustFrameStock(db, id, delta, clock());
+      const row = await adjustFrameStock(db, id, delta, MAX_STOCK, clock());
       if (row) return toAdminFrame(row);
       const frame = await requireFrame(id);
+      if (frame.stock + delta > MAX_STOCK) {
+        throw validationFailed([
+          {
+            field: "delta",
+            message: `Stock can be at most ${MAX_STOCK}; there are ${frame.stock} in stock`,
+          },
+        ]);
+      }
       throw new AppError(
         409,
         "stock_negative",

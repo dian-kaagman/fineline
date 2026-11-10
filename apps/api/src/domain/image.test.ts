@@ -6,6 +6,11 @@ const TINY_JPEG = Buffer.from(
   "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/wAALCAAIAAgBAREA/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/ACv/2Q==",
   "base64",
 );
+/** 16x16 progressive JPEG (10 scans) generated with Pillow. */
+const PROGRESSIVE_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wgARCAAQABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAwAE/8QAFAEBAAAAAAAAAAAAAAAAAAAABf/aAAwDAQACEAMQAAABztCep//EABYQAQEBAAAAAAAAAAAAAAAAADMAEP/aAAgBAQABBQI9O//EABURAQEAAAAAAAAAAAAAAAAAAAAx/9oACAEDAQE/AY//xAAVEQEBAAAAAAAAAAAAAAAAAAAAMf/aAAgBAgEBPwGv/8QAFxAAAwEAAAAAAAAAAAAAAAAAAGKxEP/aAAgBAQAGPwJJqQ//xAAYEAADAQEAAAAAAAAAAAAAAAAxcfCxEP/aAAgBAQABPyGqMQ5VGIf/2gAMAwEAAgADAAAAEGf/xAAVEQEBAAAAAAAAAAAAAAAAAAAAof/aAAgBAwEBPxCH/8QAFREBAQAAAAAAAAAAAAAAAAAAAKH/2gAIAQIBAT8Qp//EABQQAQAAAAAAAAAAAAAAAAAAACD/2gAIAQEAAT8QBgx//9k=",
+  "base64",
+);
 const TINY_PNG_WITH_TEXT = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAADHRFWHRHUFMANTIuMDkwN07YlKcuAAAAFElEQVR4nGM8kWLEgA0wYRUdtBIAFmEBbiBAe9oAAAAASUVORK5CYII=",
   "base64",
@@ -74,6 +79,42 @@ describe("metadata stripping (SR-023)", () => {
     ]);
     const clean = stripImageMetadata(file, "image/jpeg");
     expect(clean).toEqual(TINY_JPEG);
+  });
+
+  it("AC-066 drops data appended after the end of the image and APP2 MPF indexes (motion photos)", () => {
+    const mpf = jpegSegment(0xe2, Buffer.from("MPF\0MM\0*\0\0\0\x08", "latin1"));
+    const appended = Buffer.concat([
+      TINY_JPEG.subarray(0, 2),
+      jpegSegment(0xe1, Buffer.from("Exif\0\0GPS 52.09N")),
+      Buffer.from("ftypmp42 video"),
+    ]);
+    const file = Buffer.concat([TINY_JPEG.subarray(0, 2), mpf, TINY_JPEG.subarray(2), appended]);
+    expect(stripImageMetadata(file, "image/jpeg")).toEqual(TINY_JPEG);
+  });
+
+  it("keeps every scan and table of a progressive JPEG", () => {
+    expect(PROGRESSIVE_JPEG.includes(Buffer.from([0xff, 0xda]))).toBe(true);
+    const comment = jpegSegment(0xfe, Buffer.from("taken at home"));
+    const file = Buffer.concat([
+      PROGRESSIVE_JPEG.subarray(0, 2),
+      comment,
+      PROGRESSIVE_JPEG.subarray(2),
+    ]);
+    expect(stripImageMetadata(file, "image/jpeg")).toEqual(PROGRESSIVE_JPEG);
+    expect(
+      stripImageMetadata(PROGRESSIVE_JPEG.subarray(0, PROGRESSIVE_JPEG.length - 2), "image/jpeg"),
+    ).toBeNull();
+  });
+
+  it("drops data after PNG IEND and beyond the WebP RIFF size", () => {
+    const trailer = Buffer.from("Exif GPS 52.0907 N");
+    const png = stripImageMetadata(
+      Buffer.concat([TINY_PNG_WITH_TEXT, trailer]),
+      "image/png",
+    ) as Buffer;
+    expect(png.includes(trailer)).toBe(false);
+    const webp = stripImageMetadata(Buffer.concat([TINY_WEBP, trailer]), "image/webp") as Buffer;
+    expect(webp).toEqual(TINY_WEBP);
   });
 
   it("removes PNG text chunks and keeps a valid PNG", () => {

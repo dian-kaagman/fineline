@@ -43,17 +43,21 @@ export async function updateFrame(
   return rows[0];
 }
 
-/** Atomic signed stock change that never goes below zero (BR-006). Undefined when refused or unknown. */
+/**
+ * Atomic signed stock change that never goes below zero (BR-006) nor above `maxStock`. Undefined
+ * when refused or unknown.
+ */
 export async function adjustFrameStock(
   db: Executor,
   id: string,
   delta: number,
+  maxStock: number,
   now: Date,
 ): Promise<FrameRow | undefined> {
   const rows = await db
     .update(frames)
     .set({ stock: sql`${frames.stock} + ${delta}`, updatedAt: now })
-    .where(and(eq(frames.id, id), sql`${frames.stock} + ${delta} >= 0`))
+    .where(and(eq(frames.id, id), sql`${frames.stock} + ${delta} between 0 and ${maxStock}`))
     .returning();
   return rows[0];
 }

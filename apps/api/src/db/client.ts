@@ -13,10 +13,13 @@ export interface DatabaseConnection {
   pool: pg.Pool;
 }
 
-export function createDatabase(connectionString: string): DatabaseConnection {
+export function createDatabase(
+  connectionString: string,
+  onIdleError: (error: Error) => void = () => undefined,
+): DatabaseConnection {
   const pool = new pg.Pool({ connectionString, max: 10 });
-  // An idle client error must not crash the process; the next query reports it.
-  pool.on("error", () => undefined);
+  // An idle client error must not crash the process; the next query reports it to the caller.
+  pool.on("error", onIdleError);
   return { pool, db: drizzle(pool, { schema }) };
 }
 

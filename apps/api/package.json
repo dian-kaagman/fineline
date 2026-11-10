@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/scripts/migrate.ts",
-    "hash-password": "tsx src/scripts/hash-password.ts"
+    "hash-password": "tsx src/scripts/hash-password.ts",
+    "erase-order": "tsx --env-file-if-exists=.env src/scripts/erase-order.ts"
   },
   "license": "UNLICENSED",
   "dependencies": {

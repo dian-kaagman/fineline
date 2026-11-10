@@ -79,6 +79,8 @@ describe("drawing SVG check (SR-006)", () => {
     ],
     ["url() in d", svg(path("M0 0 L1 1 url(#x)")), "bad_path_data"],
     ["arc command", svg(path("M0 0 A5 5 0 0 1 10 10")), "bad_path_data"],
+    ["a no-break space in d", svg(path("M10\u00a010 L50 50")), "bad_path_data"],
+    ["a line separator in d", svg(path("M10 10\u2028L50 50")), "bad_path_data"],
     ["a fill", svg(path("M0 0 L1 1", 'fill="#000" stroke="#000"')), "fill_not_none"],
     [
       "no fill attribute (SVG default fill is black)",

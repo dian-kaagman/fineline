@@ -153,6 +153,55 @@ describe("admin frames", () => {
     expect(await h.db.select().from(frames)).toEqual([]);
   });
 
+  it("AC-040 AC-041 reports a too small size together with the other field errors", async () => {
+    const res = await createFrame(
+      frameParts({ name: "Mini", widthMm: "130", heightMm: "180", priceCents: "0", stock: "1" }),
+    );
+    expect(res.statusCode).toBe(400);
+    expect(
+      res
+        .json()
+        .error.details.map((d: { field: string }) => d.field)
+        .sort(),
+    ).toEqual(["heightMm", "photo", "priceCents", "widthMm"]);
+  });
+
+  it("caps stock at 100000 so adjustments never overflow (400, not 500)", async () => {
+    const tooMuch = await createFrame(frameParts({ ...OAK, stock: "100001" }, jpegPhoto()));
+    expect(tooMuch.statusCode).toBe(400);
+    expect(tooMuch.json().error.details).toEqual([
+      { field: "stock", message: "Enter a starting stock from 0 to 100000, as a whole number" },
+    ]);
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 99_995 });
+    const url = `/api/v1/admin/frames/${oak.id}/stock-adjustments`;
+    const over = await h.request({
+      method: "POST",
+      url,
+      headers: adminHeaders(cookie),
+      payload: { delta: 6 },
+    });
+    expect(over.statusCode).toBe(400);
+    expect(over.json().error.details[0].field).toBe("delta");
+    expect(await frameStock(h, oak.id)).toBe(99_995);
+    const big = await h.request({
+      method: "POST",
+      url,
+      headers: adminHeaders(cookie),
+      payload: { delta: 2_147_483_647 },
+    });
+    expect(big.statusCode).toBe(400);
+    expect(
+      (
+        await h.request({
+          method: "POST",
+          url,
+          headers: adminHeaders(cookie),
+          payload: { delta: 5 },
+        })
+      ).json().stock,
+    ).toBe(100_000);
+  });
+
   it("rejects a frame photo that is not JPEG, PNG or WebP, and one over 5 MB", async () => {
     const svg = await createFrame(
       frameParts(OAK, {

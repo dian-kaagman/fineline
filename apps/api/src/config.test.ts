@@ -69,6 +69,14 @@ describe("environment validation (SR-020)", () => {
     );
   });
 
+  it("SR-020 refuses a DATABASE_URL whose password is still the .env.example placeholder", () => {
+    const placeholder = "postgres://fineline:replace-with-a-local-db-password@db:5432/fineline";
+    const found = problems({ ...valid, DATABASE_URL: placeholder });
+    expect(found).toEqual(["DATABASE_URL still has the .env.example placeholder password"]);
+    expect(found.join()).not.toContain("replace-with-a-local");
+    expect(problems({ ...valid, DATABASE_URL: "mysql://x" })[0]).toMatch(/^DATABASE_URL must be/);
+  });
+
   it("refuses weak or malformed password hashes", () => {
     expect(
       problems({ ...valid, ADMIN_PASSWORD_HASH: HASH.replace("scrypt:17", "scrypt:14") }),

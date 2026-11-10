@@ -11,8 +11,11 @@ export const LIMITS = {
   drawingsPerIp: { max: 10, timeWindow: 3_600_000 },
   drawingsGlobal: { max: 60, timeWindow: 3_600_000 },
   ordersPerIp: { max: 5, timeWindow: 3_600_000 },
-  loginFailuresPerIp: { max: 5, timeWindow: 15 * 60_000 },
-  loginFailuresGlobal: { max: 100, timeWindow: 3_600_000 },
+  /** Login attempts that did not succeed (successful logins are refunded). */
+  loginAttemptsPerIp: { max: 5, timeWindow: 15 * 60_000 },
+  loginAttemptsGlobal: { max: 100, timeWindow: 3_600_000 },
+  /** Logins waiting while another password is being verified; more get 429 at once. */
+  loginVerificationQueue: 2,
 } as const;
 
 type Callback = (err: Error | null, res: { current: number; ttl: number }) => void;

@@ -12,6 +12,11 @@ export interface FileStorage {
   delete(key: string): Promise<void>;
   /** Every stored file with its last modification time (for the orphan sweep, SR-022). */
   list(): Promise<{ key: string; modifiedAt: Date }[]>;
+  /**
+   * Removes leftovers of writes interrupted by a crash (e.g. temp files) last modified before
+   * `before`; returns how many were removed (SR-022).
+   */
+  removeStaleTemporaryFiles(before: Date): Promise<number>;
 }
 
 export const STORAGE_KEY_PATTERN = /^(photos|drawings|frames)\/[0-9a-f-]{36}(\.svg)?$/;

@@ -1,10 +1,9 @@
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { csrfFailed, unauthenticated } from "../../lib/errors.js";
 import { noStore } from "../../lib/http.js";
-import { LIMITS } from "../../lib/rate-limit.js";
 import { parseOrThrow } from "../../lib/validation.js";
-import type { AuthService, LoginThrottle } from "./auth.service.js";
+import type { AuthService } from "./auth.service.js";
 
 export const ADMIN_PREFIX = "/api/v1/admin";
 export const SESSION_COOKIE = "fineline_admin";
@@ -19,36 +18,6 @@ const loginBody = z.strictObject({
 
 function isLogin(request: FastifyRequest): boolean {
   return request.method === "POST" && request.routeOptions.url === `${ADMIN_PREFIX}/session`;
-}
-
-/** Failed-login counters on @fastify/rate-limit's store: read before scrypt, counted on failure. */
-function createLoginThrottle(app: FastifyInstance): (request: FastifyRequest) => LoginThrottle {
-  const limiters = [
-    {
-      limiter: app.createRateLimit({
-        ...LIMITS.loginFailuresPerIp,
-        keyGenerator: (r) => `login:${r.ip}`,
-      }),
-    },
-    {
-      limiter: app.createRateLimit({
-        ...LIMITS.loginFailuresGlobal,
-        keyGenerator: () => "login:all",
-      }),
-    },
-  ];
-  return (request) => ({
-    async retryAfter() {
-      for (const { limiter } of limiters) {
-        const state = await limiter(request, { increment: false });
-        if (!state.isAllowed && state.remaining === 0) return state.ttlInSeconds;
-      }
-      return null;
-    },
-    async recordFailure() {
-      for (const { limiter } of limiters) await limiter(request);
-    },
-  });
 }
 
 export interface AdminPluginOptions {
@@ -74,8 +43,6 @@ export function adminPlugin(options: AdminPluginOptions): FastifyPluginAsync {
   };
 
   return async function (app) {
-    const throttleFor = createLoginThrottle(app);
-
     app.addHook("onRequest", noStore);
     app.addHook("onRequest", async (request) => {
       if (!isLogin(request)) {
@@ -106,7 +73,6 @@ export function adminPlugin(options: AdminPluginOptions): FastifyPluginAsync {
           clientIp: request.ip,
           presentedSessionId: request.cookies[SESSION_COOKIE],
         },
-        throttleFor(request),
         request.log,
       );
       reply.setCookie(SESSION_COOKIE, sessionId, { ...cookieOptions, maxAge: maxAgeSeconds });

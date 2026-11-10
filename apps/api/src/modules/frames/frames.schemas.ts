@@ -4,6 +4,8 @@ import { text } from "../../lib/validation.js";
 import type { FrameRow } from "./frames.repository.js";
 
 export const INT32_MAX = 2_147_483_647;
+/** Business ceiling for stock, far below the integer column's limit so adding never overflows. */
+export const MAX_STOCK = 100_000;
 /** 5 MiB (Q-16). */
 export const MAX_FRAME_PHOTO_BYTES = 5 * 1024 * 1024;
 
@@ -23,7 +25,7 @@ const wholeNumber = (message: string) =>
 export const widthMessage = "Enter the inner width as a whole number of millimetres";
 export const heightMessage = "Enter the inner height as a whole number of millimetres";
 export const priceMessage = "Enter a price above 0 in whole euro cents, like 4995";
-export const stockMessage = "Enter a starting stock of 0 or more, as a whole number";
+export const stockMessage = `Enter a starting stock from 0 to ${MAX_STOCK}, as a whole number`;
 
 /** Frame size must be at least the drawing area, portrait (BR-006, BR-003, Q-15). */
 export function sizeProblems(
@@ -62,7 +64,7 @@ export const createFrameFields = z.object({
     .string({ error: stockMessage })
     .regex(/^\d{1,10}$/, stockMessage)
     .transform(Number)
-    .pipe(wholeNumber(stockMessage)),
+    .pipe(wholeNumber(stockMessage).max(MAX_STOCK, stockMessage)),
 });
 
 export const updateFrameBody = z

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { AppError, waitText } from "../../lib/errors.js";
 import { noStore } from "../../lib/http.js";
 import { readMultipart } from "../../lib/multipart.js";
@@ -20,6 +20,16 @@ export function drawingsRoutes(service: DrawingsService) {
     );
 
     app.post("/api/v1/drawings", { onRequest: [noStore, limit] }, async (request, reply) => {
+      // The slot is taken before the body is read: a busy API answers 503 without buffering it.
+      const release = service.startConversion(request.log);
+      try {
+        return reply.status(201).send(await convertUpload(request));
+      } finally {
+        release();
+      }
+    });
+
+    async function convertUpload(request: FastifyRequest) {
       const form = await readMultipart(request, {
         fileField: "photo",
         maxFileBytes: MAX_PHOTO_BYTES,
@@ -36,8 +46,7 @@ export function drawingsRoutes(service: DrawingsService) {
       }
       if (!form.file)
         throw new AppError(400, "photo_missing", "Choose a photo to make your drawing.");
-      const preview = await service.createDrawing(form.file, request.log);
-      return reply.status(201).send(preview);
-    });
+      return service.createDrawing(form.file, request.log);
+    }
   };
 }

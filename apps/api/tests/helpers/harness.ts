@@ -36,8 +36,10 @@ export interface Harness {
   config: Config;
   logs: string[];
   routes: RouteOptions[];
-  /** Number of scrypt verifications run (SR-011: none for throttled logins). */
-  passwordChecks: { count: number };
+  /** scrypt verifications run (SR-011: none for throttled logins) and the most at once (SR-010). */
+  passwordChecks: { count: number; running: number; maxConcurrent: number };
+  /** Another app on the same database and storage, e.g. with a different configuration. */
+  buildApp(config: Config): Promise<FastifyInstance>;
   now: Date;
   setNow(iso: string | Date): void;
   advance(ms: number): void;
@@ -59,8 +61,9 @@ export function useHarness(options: { config?: (c: Config) => Config } = {}): Ha
   const h = {
     logs: [] as string[],
     routes: [] as RouteOptions[],
-    passwordChecks: { count: 0 },
+    passwordChecks: { count: 0, running: 0, maxConcurrent: 0 },
   } as unknown as Harness;
+  const extraApps: FastifyInstance[] = [];
   let pool: ReturnType<typeof createDatabase>["pool"];
 
   beforeAll(async () => {
@@ -88,6 +91,8 @@ export function useHarness(options: { config?: (c: Config) => Config } = {}): Ha
     h.logs.length = 0;
     h.routes.length = 0;
     h.passwordChecks.count = 0;
+    h.passwordChecks.running = 0;
+    h.passwordChecks.maxConcurrent = 0;
     h.now = new Date("2026-11-06T13:00:00Z");
     h.setNow = (iso) => {
       h.now = new Date(iso);
@@ -120,23 +125,38 @@ export function useHarness(options: { config?: (c: Config) => Config } = {}): Ha
       },
     });
     const countingVerifier: PasswordVerifier = async (password, hash) => {
-      h.passwordChecks.count += 1;
-      return verifyPassword(password, hash);
+      const checks = h.passwordChecks;
+      checks.count += 1;
+      checks.running += 1;
+      checks.maxConcurrent = Math.max(checks.maxConcurrent, checks.running);
+      try {
+        return await verifyPassword(password, hash);
+      } finally {
+        checks.running -= 1;
+      }
     };
-    const built = await buildApp({
-      config: h.config,
-      db: h.db,
-      storage: h.storage,
-      worker: new HttpWorkerClient(
-        h.config.worker.url,
-        h.config.worker.token,
-        h.config.worker.timeoutMs,
-      ),
-      clock: () => new Date(h.now),
-      logger: createLogger("info", destination),
-      verifyPassword: countingVerifier,
-      onRoute: (route) => h.routes.push(route),
-    });
+    const build = (config: Config, onRoute?: (route: RouteOptions) => void) =>
+      buildApp({
+        config,
+        db: h.db,
+        storage: h.storage,
+        worker: new HttpWorkerClient(
+          config.worker.url,
+          config.worker.token,
+          config.worker.timeoutMs,
+        ),
+        clock: () => new Date(h.now),
+        logger: createLogger("info", destination),
+        verifyPassword: countingVerifier,
+        ...(onRoute ? { onRoute } : {}),
+      });
+    const built = await build(h.config, (route) => h.routes.push(route));
+    h.buildApp = async (config) => {
+      const extra = (await build(config)).app;
+      extraApps.push(extra);
+      await extra.ready();
+      return extra;
+    };
     h.app = built.app;
     h.retention = built.retention;
     await h.app.ready();
@@ -169,6 +189,7 @@ export function useHarness(options: { config?: (c: Config) => Config } = {}): Ha
 
   afterEach(async () => {
     await h.app.close();
+    await Promise.all(extraApps.splice(0).map((a) => a.close()));
     await rm(h.storageDir, { recursive: true, force: true });
   });
 

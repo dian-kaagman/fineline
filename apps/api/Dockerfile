@@ -2,6 +2,8 @@
 # The container applies the database migrations, then starts the API.
 # Admin password hash without a host Node install:
 #   docker compose run --rm api node dist/scripts/hash-password.js
+# Erase one customer's data on request (SR-022):
+#   docker compose exec api node dist/scripts/erase-order.js FL-2026-0042
 
 FROM node:22.22-slim AS build
 WORKDIR /app
@@ -24,5 +26,5 @@ RUN mkdir -p /data/storage && chown node:node /data/storage && chmod 700 /data/s
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 CMD ["sh", "-c", "node dist/scripts/migrate.js && exec node dist/server.js"]

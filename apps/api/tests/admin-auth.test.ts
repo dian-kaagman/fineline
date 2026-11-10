@@ -114,6 +114,56 @@ describe("admin login", () => {
     );
   });
 
+  it("AC-061 SR-011 counts attempts before scrypt: 40 parallel wrong logins from one address get at most 5 checks", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 40 }, (_, i) =>
+        login({ username: "owner", password: `guess-${i}-xxxxxxx` }),
+      ),
+    );
+    const statuses = results.map((r) => r.statusCode);
+    expect(h.passwordChecks.count).toBeLessThanOrEqual(5);
+    expect(statuses.filter((s) => s === 401).length).toBe(h.passwordChecks.count);
+    expect(statuses.filter((s) => s === 429).length).toBe(40 - h.passwordChecks.count);
+    for (const res of results.filter((r) => r.statusCode === 429)) {
+      expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
+    }
+    // Logins refused because another one was being checked don't count; after 5 failures in total
+    // even the right password is refused.
+    for (let i = h.passwordChecks.count; i < 5; i++) {
+      expect((await login({ username: "owner", password: `more-${i}` })).statusCode).toBe(401);
+    }
+    expect((await login({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD })).statusCode).toBe(
+      429,
+    );
+  });
+
+  it("SR-010 verifies one password at a time; logins beyond a short queue get 429 at once", async () => {
+    const results = await Promise.all(
+      ["198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4", "198.51.100.5"].map((ip) =>
+        login({ username: "owner", password: "wrong-password-1" }, { remoteAddress: ip }),
+      ),
+    );
+    expect(h.passwordChecks.maxConcurrent).toBe(1);
+    const statuses = results.map((r) => r.statusCode).sort();
+    expect(statuses).toEqual([401, 401, 401, 429, 429]);
+    const busy = results.find((r) => r.statusCode === 429)!;
+    expect(busy.json().error.code).toBe("rate_limited");
+    expect(busy.headers["retry-after"]).toBe("1");
+  });
+
+  it("AC-061 a successful login doesn't use up an attempt", async () => {
+    for (let i = 0; i < 4; i++)
+      expect((await login({ username: "owner", password: `wrong-${i}` })).statusCode).toBe(401);
+    for (let i = 0; i < 3; i++)
+      expect((await login({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD })).statusCode).toBe(
+        200,
+      );
+    expect((await login({ username: "owner", password: "wrong-again" })).statusCode).toBe(401);
+    expect((await login({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD })).statusCode).toBe(
+      429,
+    );
+  });
+
   it("AC-028 a logged-out session is refused", async () => {
     const cookie = await h.login();
     const res = await h.request({

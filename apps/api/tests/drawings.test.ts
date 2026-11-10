@@ -1,5 +1,6 @@
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
   drawingSvg,
@@ -232,9 +233,20 @@ describe("POST /api/v1/drawings", () => {
     });
     expect(missing.statusCode).toBe(400);
 
-    const empty = await h.request({ method: "POST", url: "/api/v1/drawings", payload: {} });
+    const noParts = await multipart([]);
+    const empty = await h.request({
+      method: "POST",
+      url: "/api/v1/drawings",
+      payload: noParts.payload,
+      headers: noParts.headers,
+    });
     expect(empty.statusCode).toBe(400);
     expect(empty.json().error.code).toBe("photo_missing");
+
+    // Not multipart at all: a wrong content type (contract: 415).
+    const json = await h.request({ method: "POST", url: "/api/v1/drawings", payload: {} });
+    expect(json.statusCode).toBe(415);
+    expect(json.json().error.code).toBe("unsupported_media_type");
     expect(h.worker.calls).toHaveLength(0);
   });
 
@@ -344,6 +356,59 @@ describe("POST /api/v1/drawings", () => {
 
     h.worker.reply = () => workerSuccess();
     expect((await upload(jpegBytes())).statusCode).toBe(201);
+  });
+
+  it("SR-004 a busy API refuses an upload before reading its body into memory", async () => {
+    h.worker.reply = () => ({ ...workerSuccess(), delayMs: 1_000 });
+    const running = [upload(jpegBytes()), upload(jpegBytes())];
+    await new Promise((r) => setTimeout(r, 300));
+    // A 64 MB body produced on demand: if the API read it, far more than a few chunks would be pulled.
+    let pulled = 0;
+    const boundary = "----busyboundary";
+    const body = new Readable({
+      read() {
+        pulled += 1;
+        if (pulled === 1) {
+          this.push(
+            `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="a.jpg"\r\n\r\n`,
+          );
+        } else if (pulled <= 64) this.push(jpegBytes(1024 * 1024));
+        else this.push(null);
+      },
+    });
+    const res = await h.request({
+      method: "POST",
+      url: "/api/v1/drawings",
+      payload: body,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error.code).toBe("conversion_unavailable");
+    expect(res.headers["retry-after"]).toBe("30");
+    expect(pulled).toBeLessThan(20);
+    await Promise.all(running);
+  });
+
+  it("answers a cut-off multipart upload with 400, not 500", async () => {
+    const boundary = "----cutboundary";
+    const res = await h.request({
+      method: "POST",
+      url: "/api/v1/drawings",
+      payload: `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="a.jpg"\r\n\r\n\xff\xd8\xff\xe0 cut here`,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("validation_failed");
+    expect(h.logs.join("")).not.toContain("unhandled_error");
+  });
+
+  it("SR-004 gives up on a worker response over 4 MB while reading it", async () => {
+    h.worker.reply = () => ({ status: 200, chunkedBody: Buffer.alloc(8 * 1024 * 1024, 0x20) });
+    const res = await upload(jpegBytes());
+    expect(res.statusCode).toBe(503);
+    expect(h.logs.join("")).toContain("response_too_large");
+    h.worker.reply = () => ({ status: 200, body: { svg: "x".repeat(5 * 1024 * 1024) } });
+    expect((await upload(jpegBytes())).statusCode).toBe(503);
   });
 
   it("AC-054 a third concurrent upload is refused within 2 seconds while two conversions run", async () => {
@@ -470,7 +535,7 @@ describe("POST /api/v1/drawings", () => {
         remoteAddress: ip,
         payload: {},
       });
-      expect(res.statusCode).toBe(400); // counted even though there is no photo
+      expect(res.statusCode).toBe(415); // counted even though it is not an upload at all
     }
     const res = await h.request({
       method: "POST",

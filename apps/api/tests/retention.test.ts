@@ -1,8 +1,8 @@
-import { utimes } from "node:fs/promises";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { adminSessions, drawings } from "../src/db/schema.js";
+import { adminSessions, drawings, orders } from "../src/db/schema.js";
 import { useHarness } from "./helpers/harness.js";
 import {
   adminHeaders,
@@ -39,6 +39,74 @@ describe("retention sweep (BR-010, SR-022)", () => {
       "This preview is no longer available. Please upload your photo again.",
     );
     expect(await frameStock(h, oak.id)).toBe(3);
+  });
+
+  it("AC-011 never deletes the files of a drawing ordered while the sweep waited for its lock", async () => {
+    h.setNow("2026-11-03T09:00:00Z");
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 3 });
+    const preview = await createPreview(h);
+    const [drawing] = await h.db.select().from(drawings);
+    h.setNow("2026-11-04T09:00:01Z"); // just expired
+
+    // An order transaction (placed a moment before expiry) holds the drawing's row lock...
+    let commit!: () => void;
+    const gate = new Promise<void>((resolve) => (commit = resolve));
+    let locked!: () => void;
+    const hasLock = new Promise<void>((resolve) => (locked = resolve));
+    const orderTx = h.db.transaction(async (tx) => {
+      await tx.execute(sql`select id from drawings where id = ${preview.drawingId} for update`);
+      await tx.insert(orders).values({
+        orderNumber: "FL-2026-0001",
+        drawingId: preview.drawingId,
+        frameId: oak.id,
+        frameName: oak.name,
+        frameWidthMm: oak.widthMm,
+        frameHeightMm: oak.heightMm,
+        status: "received",
+        customerName: "Anna de Vries",
+        customerEmail: "anna@example.nl",
+        street: "Lindelaan",
+        houseNumber: "12",
+        postalCode: "3512 AB",
+        city: "Utrecht",
+        country: "NL",
+        priceCents: 4995,
+        orderDate: "2026-11-04",
+        estimatedDeliveryDate: "2026-11-13",
+        statusChangedAt: new Date("2026-11-04T08:59:59Z"),
+        createdAt: new Date("2026-11-04T08:59:59Z"),
+      });
+      locked();
+      await gate;
+    });
+    await hasLock;
+    // ...the sweep sees it as unordered and waits for the lock; then the order commits.
+    const sweep = h.retention.run();
+    await new Promise((r) => setTimeout(r, 300));
+    commit();
+    await orderTx;
+    const report = await sweep;
+
+    expect(report.drawingsDeleted).toBe(0);
+    const files = await h.storedFiles();
+    expect(files).toContain(drawing!.photoKey);
+    expect(files).toContain(drawing!.svgKey);
+    expect(await h.db.select().from(drawings)).toHaveLength(1);
+  });
+
+  it("SR-022 removes temp files of interrupted writes older than an hour", async () => {
+    await mkdir(path.join(h.storageDir, "photos"), { recursive: true });
+    const stale = path.join(h.storageDir, "photos", ".tmp-0123456789abcdef");
+    const fresh = path.join(h.storageDir, "photos", ".tmp-fedcba9876543210");
+    await writeFile(stale, "half a photo");
+    await writeFile(fresh, "being written");
+    const old = new Date(h.now.getTime() - 2 * 3_600_000);
+    await utimes(stale, old, old);
+    const recent = new Date(h.now.getTime() - 10 * 60_000);
+    await utimes(fresh, recent, recent);
+    const report = await h.retention.run();
+    expect(report.tempFilesDeleted).toBe(1);
+    expect(await h.storedFiles()).toEqual(["photos/.tmp-fedcba9876543210"]);
   });
 
   it("keeps ordered drawings past 24 hours", async () => {

@@ -176,14 +176,49 @@ describe("admin order detail and files", () => {
     expect((await get(`/api/v1/admin/orders/${order.id}`)).json().status).toBe("drawn");
   });
 
-  it("AC-021 the downloaded SVG is byte-for-byte the previewed SVG", async () => {
+  it("AC-021 after the drawing area is changed, the downloaded SVG is still byte-for-byte the preview", async () => {
     const svg = drawingSvg({ strokes: 7, length: 33 });
     h.worker.reply = () => workerSuccess(svg);
     const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 3 });
     const order = await seedOrder(h, oak.id);
     expect(order.preview.svg).toBe(svg);
-    const res = await post(`/api/v1/admin/orders/${order.id}/drawing-download`);
-    expect(res.rawPayload.equals(Buffer.from(svg, "utf8"))).toBe(true);
+
+    // The deployment now uses a smaller drawing area (A5): a new app on the same data.
+    const a5 = await h.buildApp({ ...h.config, drawingArea: { widthMm: 118, heightMm: 180 } });
+    const settings = await a5.inject({
+      method: "GET",
+      url: "/api/v1/admin/settings",
+      headers: adminHeaders(cookie, false),
+    });
+    expect(settings.json()).toMatchObject({ drawingAreaWidthMm: 118, drawingAreaHeightMm: 180 });
+    for (const res of [
+      await a5.inject({
+        method: "POST",
+        url: `/api/v1/admin/orders/${order.id}/drawing-download`,
+        headers: adminHeaders(cookie),
+      }),
+      await a5.inject({
+        method: "GET",
+        url: `/api/v1/admin/orders/${order.id}/drawing.svg`,
+        headers: adminHeaders(cookie, false),
+      }),
+    ]) {
+      expect(res.statusCode).toBe(200);
+      expect(res.rawPayload.equals(Buffer.from(svg, "utf8"))).toBe(true);
+    }
+  });
+
+  it("Q-41 shows the frame name as ordered in the admin list and detail", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 3 });
+    const order = await seedOrder(h, oak.id);
+    await h.request({
+      method: "PATCH",
+      url: `/api/v1/admin/frames/${oak.id}`,
+      headers: adminHeaders(cookie),
+      payload: { name: "Walnut A4" },
+    });
+    expect((await get(`/api/v1/admin/orders/${order.id}`)).json().frameName).toBe("Oak A4");
+    expect((await get("/api/v1/admin/orders")).json().orders[0].frameName).toBe("Oak A4");
   });
 
   it("answers 404 for unknown and malformed order IDs (SR-008)", async () => {
@@ -251,6 +286,16 @@ describe("admin status changes", () => {
     expect(offered.json().frames.map((f: { name: string }) => f.name)).toEqual(["Oak A4"]);
     const [row] = await h.db.select().from(orders).where(eq(orders.id, order.id));
     expect(row!.closedAt).not.toBeNull();
+  });
+
+  it("AC-035 cancelling an order in status drawing also returns its frame to stock", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 1 });
+    const order = await seedOrder(h, oak.id);
+    expect((await post(`/api/v1/admin/orders/${order.id}/drawing-download`)).statusCode).toBe(200);
+    expect(await frameStock(h, oak.id)).toBe(0);
+    const res = await post(`/api/v1/admin/orders/${order.id}/status`, { status: "cancelled" });
+    expect(res.json().status).toBe("cancelled");
+    expect(await frameStock(h, oak.id)).toBe(1);
   });
 
   it("AC-036 shipped and cancelled orders keep their status and delivery date; stock does not change", async () => {

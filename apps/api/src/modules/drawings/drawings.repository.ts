@@ -30,9 +30,10 @@ export async function listExpiredUnorderedDrawingIds(db: Executor, now: Date): P
 }
 
 /**
- * Locks one expired, unordered drawing for deletion. An order being placed for it at the same
- * moment holds the same row lock, so it either commits first (and this returns undefined) or finds
- * the drawing gone.
+ * Locks one expired, unordered drawing for deletion. Careful: when this waited for the lock held by
+ * an order being placed, PostgreSQL re-checks the row but evaluates the `not exists` subquery with
+ * the statement's old snapshot, so the row can come back although it was just ordered. Callers must
+ * re-check with `isDrawingOrdered` (a new statement) after taking the lock.
  */
 export async function lockExpiredUnorderedDrawing(
   db: Executor,
@@ -45,6 +46,12 @@ export async function lockExpiredUnorderedDrawing(
     .where(and(eq(drawings.id, id), lte(drawings.expiresAt, now), notOrdered))
     .for("update");
   return rows[0];
+}
+
+/** A fresh statement, so it sees orders committed while we waited for the row lock. */
+export async function isDrawingOrdered(db: Executor, id: string): Promise<boolean> {
+  const rows = await db.select({ id: orders.id }).from(orders).where(eq(orders.drawingId, id));
+  return rows.length > 0;
 }
 
 export async function deleteDrawing(db: Executor, id: string): Promise<void> {
@@ -61,4 +68,20 @@ export async function listDrawingFileKeys(db: Executor): Promise<string[]> {
     .select({ photoKey: drawings.photoKey, svgKey: drawings.svgKey })
     .from(drawings);
   return rows.flatMap((r) => [r.photoKey, r.svgKey]);
+}
+
+export async function findDrawing(db: Executor, id: string): Promise<DrawingRow | undefined> {
+  const rows = await db.select().from(drawings).where(eq(drawings.id, id));
+  return rows[0];
+}
+
+/** Marks the photo and drawing files of an erased order as deleted (keeps earlier timestamps). */
+export async function markFilesErased(db: Executor, id: string, now: Date): Promise<void> {
+  await db
+    .update(drawings)
+    .set({
+      photoDeletedAt: sql`coalesce(${drawings.photoDeletedAt}, ${now})`,
+      svgDeletedAt: sql`coalesce(${drawings.svgDeletedAt}, ${now})`,
+    })
+    .where(eq(drawings.id, id));
 }

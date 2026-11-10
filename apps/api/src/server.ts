@@ -15,13 +15,21 @@ try {
   throw err;
 }
 
-const { db, pool } = createDatabase(config.databaseUrl);
+let logIdleError: (error: Error) => void = () => undefined;
+const { db, pool } = createDatabase(config.databaseUrl, (error) => logIdleError(error));
 const { app, retention } = await buildApp({
   config,
   db,
   storage: new LocalDiskStorage(config.storageDir),
   worker: new HttpWorkerClient(config.worker.url, config.worker.token, config.worker.timeoutMs),
 });
+
+// Log only the pg error code, never the message or detail (SR-018: they can contain values).
+logIdleError = (error) =>
+  app.log.error(
+    { event: "db_idle_client_error", code: (error as Error & { code?: string }).code },
+    "idle database client error",
+  );
 
 const sweep = () => {
   retention

@@ -40,9 +40,14 @@ export function parseIdParam(
   return value.toLowerCase();
 }
 
-/** Rejects control characters (incl. line breaks) in names and addresses (SR-016). */
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+/**
+ * Rejects control characters in names and addresses (SR-016): C0 and DEL (incl. line breaks), C1,
+ * Unicode line and paragraph separators, and the bidi marks, embeddings, overrides and isolates
+ * that make a name or address display differently from what is stored.
+ */
+const CONTROL_CHARS =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
 
 export const text = (max: number, requiredMessage: string, tooLongMessage: string) =>
   z

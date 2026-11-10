@@ -427,6 +427,94 @@ describe("POST /api/v1/orders", () => {
     expect(await frameStock(h, oak.id)).toBe(5);
   });
 
+  it("SR-016 rejects bidi overrides and Unicode line separators in names and addresses", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 3 });
+    const preview = await createPreview(h);
+    for (const name of ["Anna \u202Eseirv ed", "Anna\u2066x\u2069", "Anna\u2028de Vries"]) {
+      const res = await placeOrder(
+        h,
+        orderBody(preview, oak.id, { customer: { name, email: "anna@example.nl" } }),
+      );
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.details).toEqual([
+        { field: "customer.name", message: "Must not contain control characters or line breaks" },
+      ]);
+    }
+    const ok = await placeOrder(
+      h,
+      orderBody(preview, oak.id, { customer: { name: "Zoë Ünal", email: "zoe@example.nl" } }),
+    );
+    expect(ok.statusCode).toBe(201);
+  });
+
+  it("answers 415 for a body that is not JSON (contract)", async () => {
+    const res = await h.request({
+      method: "POST",
+      url: "/api/v1/orders",
+      payload: "drawingId=1",
+      headers: { "content-type": "text/plain" },
+    });
+    expect(res.statusCode).toBe(415);
+    expect(res.json().error.code).toBe("unsupported_media_type");
+  });
+
+  it("AC-058 parallel replays of one order create one order and return the same confirmation", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 3 });
+    const preview = await createPreview(h);
+    const results = await Promise.all(
+      [1, 2, 3].map((i) => placeOrder(h, orderBody(preview, oak.id), `10.3.0.${i}`)),
+    );
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 200, 201]);
+    expect(new Set(results.map((r) => r.json().orderNumber)).size).toBe(1);
+    expect(await orderCount(h)).toBe(1);
+    expect(await frameStock(h, oak.id)).toBe(2);
+  });
+
+  it("AC-060 replays and rejected input don't use up the per-address order budget (Q-36)", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 10 });
+    const first = await createPreview(h);
+    expect((await placeOrder(h, orderBody(first, oak.id), "192.0.2.20")).statusCode).toBe(201);
+    for (let i = 0; i < 6; i++) {
+      expect((await placeOrder(h, orderBody(first, oak.id), "192.0.2.20")).statusCode).toBe(200);
+      expect(
+        (await placeOrder(h, orderBody(first, oak.id, { acceptedPhotoTerms: false }), "192.0.2.20"))
+          .statusCode,
+      ).toBe(400);
+    }
+    // Four more real orders fit in the budget of 5; the next one is refused.
+    for (let i = 0; i < 4; i++) {
+      expect(
+        (await placeOrder(h, orderBody(await createPreview(h), oak.id), "192.0.2.20")).statusCode,
+      ).toBe(201);
+    }
+    expect(
+      (await placeOrder(h, orderBody(await createPreview(h), oak.id), "192.0.2.20")).statusCode,
+    ).toBe(429);
+  });
+
+  it("SR-017 counts orders before they run: parallel requests can't pass the limit together", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 20 });
+    const previews = [];
+    for (let i = 0; i < 8; i++) previews.push(await createPreview(h));
+    const results = await Promise.all(
+      previews.map((p) => placeOrder(h, orderBody(p, oak.id), "192.0.2.30")),
+    );
+    expect(results.filter((r) => r.statusCode === 201)).toHaveLength(5);
+    expect(results.filter((r) => r.statusCode === 429)).toHaveLength(3);
+  });
+
+  it("Q-41 keeps the frame name as ordered: renaming the frame doesn't change the order or its replay", async () => {
+    const oak = await seedFrame(h, { name: "Oak A4", priceCents: 4995, stock: 3 });
+    const preview = await createPreview(h);
+    expect((await placeOrder(h, orderBody(preview, oak.id))).json().frameName).toBe("Oak A4");
+    await h.db.execute(sql`update frames set name = 'Walnut A4', width_mm = 220`);
+    const replay = await placeOrder(h, orderBody(preview, oak.id));
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().frameName).toBe("Oak A4");
+    const [order] = await h.db.select().from(orders);
+    expect(order).toMatchObject({ frameName: "Oak A4", frameWidthMm: 210, frameHeightMm: 297 });
+  });
+
   it("answers malformed JSON and unknown routes in the error shape", async () => {
     const res = await h.request({
       method: "POST",

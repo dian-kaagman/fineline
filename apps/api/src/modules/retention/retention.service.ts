@@ -6,6 +6,7 @@ import type { FileStorage } from "../../storage/file-storage.js";
 import { deleteExpiredSessions } from "../admin/sessions.repository.js";
 import {
   deleteDrawing,
+  isDrawingOrdered,
   listDrawingFileKeys,
   listExpiredUnorderedDrawingIds,
   lockExpiredUnorderedDrawing,
@@ -14,10 +15,13 @@ import {
 import { listFramePhotoKeys } from "../frames/frames.repository.js";
 import { findClosedOrderPhotos } from "../orders/orders.repository.js";
 
+const TEMP_FILE_MAX_AGE_MS = 3_600_000;
+
 export interface RetentionReport {
   drawingsDeleted: number;
   orderPhotosDeleted: number;
   orphanFilesDeleted: number;
+  tempFilesDeleted: number;
   sessionsDeleted: number;
   failures: number;
 }
@@ -47,6 +51,7 @@ export function createRetentionService({
       drawingsDeleted: 0,
       orderPhotosDeleted: 0,
       orphanFilesDeleted: 0,
+      tempFilesDeleted: 0,
       sessionsDeleted: 0,
       failures: 0,
     };
@@ -63,7 +68,8 @@ export function createRetentionService({
       try {
         const deleted = await db.transaction(async (tx) => {
           const drawing = await lockExpiredUnorderedDrawing(tx, id, now);
-          if (!drawing) return false;
+          // Ordered while we waited for the lock: its files belong to an order now (BR-005).
+          if (!drawing || (await isDrawingOrdered(tx, id))) return false;
           await storage.delete(drawing.photoKey);
           await storage.delete(drawing.svgKey);
           await deleteDrawing(tx, id);
@@ -102,6 +108,15 @@ export function createRetentionService({
       }
     } catch {
       failed("orphan_listing");
+    }
+
+    // Temp files of writes interrupted by a crash, older than an hour.
+    try {
+      report.tempFilesDeleted = await storage.removeStaleTemporaryFiles(
+        new Date(now.getTime() - TEMP_FILE_MAX_AGE_MS),
+      );
+    } catch {
+      failed("temp_files");
     }
 
     // Expired admin sessions.

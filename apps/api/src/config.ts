@@ -51,8 +51,27 @@ const corsOrigin = z
     }
   }, "must be one exact origin such as http://localhost:5173");
 
+/**
+ * Why a DATABASE_URL is unusable, or null. A password still at a `replace-with...` placeholder (the
+ * root .env.example's POSTGRES_PASSWORD) is refused like the other secrets (SR-020).
+ */
+export function databaseUrlProblem(value: string): string | null {
+  if (!/^postgres(ql)?:\/\//.test(value)) return "must be a postgres:// connection URL";
+  let password: string;
+  try {
+    password = decodeURIComponent(new URL(value).password);
+  } catch {
+    return "must be a postgres:// connection URL";
+  }
+  if (/^replace-with/i.test(password)) return "still has the .env.example placeholder password";
+  return null;
+}
+
 const envSchema = z.object({
-  DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, "must be a postgres:// connection URL"),
+  DATABASE_URL: z.string().superRefine((value, ctx) => {
+    const problem = databaseUrlProblem(value);
+    if (problem) ctx.addIssue({ code: "custom", message: problem });
+  }),
   PORT: int(1, 65535).default(3000),
   STORAGE_DIR: z.string().min(1, "must be a directory path"),
   WORKER_URL: z.url({ protocol: /^https?$/, message: "must be an http(s) URL" }),

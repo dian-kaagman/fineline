@@ -4,6 +4,7 @@ import path from "node:path";
 import { isStorageKey, type FileStorage } from "./file-storage.js";
 
 const PREFIXES = ["photos", "drawings", "frames"] as const;
+const TEMP_NAME = /^\.tmp-[0-9a-f]{16}$/;
 
 /**
  * FileStorage on local disk under STORAGE_DIR (ADR 0006, SR-015): keys are pattern-checked and
@@ -49,6 +50,29 @@ export class LocalDiskStorage implements FileStorage {
 
   async delete(key: string): Promise<void> {
     await rm(this.pathFor(key), { force: true });
+  }
+
+  async removeStaleTemporaryFiles(before: Date): Promise<number> {
+    let removed = 0;
+    for (const prefix of PREFIXES) {
+      const dir = path.join(this.root, prefix);
+      let names: string[];
+      try {
+        names = await readdir(dir);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw err;
+      }
+      for (const name of names) {
+        if (!TEMP_NAME.test(name)) continue;
+        const file = path.join(dir, name);
+        if ((await stat(file)).mtime < before) {
+          await rm(file, { force: true });
+          removed += 1;
+        }
+      }
+    }
+    return removed;
   }
 
   async list(): Promise<{ key: string; modifiedAt: Date }[]> {

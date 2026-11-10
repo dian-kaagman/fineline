@@ -107,6 +107,13 @@ export function createAdminOrdersService({ db, storage, clock }: AdminOrdersServ
   }
 
   async function readSvg(row: OrderWithJoins): Promise<Buffer> {
+    if (row.drawing.svgDeletedAt !== null) {
+      throw new AppError(
+        404,
+        "drawing_deleted",
+        "This drawing was erased on the customer's request.",
+      );
+    }
     const data = await storage.get(row.drawing.svgKey);
     if (!data) throw new Error("drawing file missing");
     return data;

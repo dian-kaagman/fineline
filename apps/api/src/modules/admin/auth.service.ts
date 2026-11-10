@@ -3,7 +3,9 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Database } from "../../db/client.js";
 import { isSessionExpired, SESSION_ABSOLUTE_LIFETIME_MS } from "../../domain/retention.js";
 import type { Clock } from "../../lib/clock.js";
+import { AttemptLimiter, reserveAll, SingleFlightQueue } from "../../lib/attempt-limiter.js";
 import { AppError, rateLimited, waitText } from "../../lib/errors.js";
+import { LIMITS } from "../../lib/rate-limit.js";
 import type { ParsedPasswordHash } from "../../lib/password-hash.js";
 import { deleteSession, findSession, insertSession, touchSession } from "./sessions.repository.js";
 
@@ -13,13 +15,6 @@ import { deleteSession, findSession, insertSession, touchSession } from "./sessi
  */
 
 export type PasswordVerifier = (password: string, hash: ParsedPasswordHash) => Promise<boolean>;
-
-/** Failed logins of the requesting client address and globally (SR-011). */
-export interface LoginThrottle {
-  /** Seconds to wait when logins from this client are currently refused, else null. */
-  retryAfter(): Promise<number | null>;
-  recordFailure(): Promise<void>;
-}
 
 export interface AuthServiceDeps {
   db: Database;
@@ -38,6 +33,19 @@ export const invalidCredentials = () =>
 export function createAuthService(deps: AuthServiceDeps) {
   const { db, clock, admin, sessionIdleHours, verifyPassword } = deps;
   const expectedUsername = sha256(admin.username);
+  // Login attempts are counted before scrypt runs (SR-011); a successful login is refunded.
+  const attemptsPerIp = new AttemptLimiter(
+    clock,
+    LIMITS.loginAttemptsPerIp.max,
+    LIMITS.loginAttemptsPerIp.timeWindow,
+  );
+  const attemptsGlobal = new AttemptLimiter(
+    clock,
+    LIMITS.loginAttemptsGlobal.max,
+    LIMITS.loginAttemptsGlobal.timeWindow,
+  );
+  // One scrypt verification (128 MiB) at a time, with a short queue (SR-010 amended).
+  const verification = new SingleFlightQueue(LIMITS.loginVerificationQueue);
 
   return {
     /**
@@ -52,28 +60,45 @@ export function createAuthService(deps: AuthServiceDeps) {
         clientIp: string;
         presentedSessionId: string | undefined;
       },
-      throttle: LoginThrottle,
       log: FastifyBaseLogger,
     ): Promise<{ sessionId: string; maxAgeSeconds: number }> {
-      const wait = await throttle.retryAfter();
-      if (wait !== null) {
+      const attempt = reserveAll([
+        { limiter: attemptsPerIp, key: input.clientIp },
+        { limiter: attemptsGlobal, key: "all" },
+      ]);
+      if (!attempt.ok) {
         log.warn(
           { event: "login_throttled", ip: input.clientIp },
           "login refused by the attempt limit",
         );
         throw rateLimited(
-          `Too many login attempts. Please wait ${waitText(wait)} and try again.`,
-          wait,
+          `Too many login attempts. Please wait ${waitText(attempt.retryAfterSeconds)} and try again.`,
+          attempt.retryAfterSeconds,
         );
       }
 
-      const usernameOk = timingSafeEqual(sha256(input.username), expectedUsername);
-      const passwordOk = await verifyPassword(input.password, admin.passwordHash);
-      if (!usernameOk || !passwordOk) {
-        await throttle.recordFailure();
+      const outcome = await verification.run(async () => {
+        const usernameOk = timingSafeEqual(sha256(input.username), expectedUsername);
+        // scrypt runs even for a wrong username, so both answers take the same time.
+        const passwordOk = await verifyPassword(input.password, admin.passwordHash);
+        return usernameOk && passwordOk;
+      });
+      if (outcome.busy) {
+        attempt.reservation.refund();
+        log.warn(
+          { event: "login_busy", ip: input.clientIp },
+          "login refused: another login is being checked",
+        );
+        throw rateLimited(
+          "Too many login attempts at once. Please wait a moment and try again.",
+          1,
+        );
+      }
+      if (!outcome.value) {
         log.warn({ event: "login_failed", ip: input.clientIp }, "failed admin login");
         throw invalidCredentials();
       }
+      attempt.reservation.refund();
 
       if (input.presentedSessionId)
         await deleteSession(db, hashSessionId(input.presentedSessionId));

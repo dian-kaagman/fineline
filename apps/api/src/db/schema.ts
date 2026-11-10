@@ -32,6 +32,8 @@ export const drawings = pgTable(
     createdAt: timestamptz("created_at").notNull(),
     expiresAt: timestamptz("expires_at").notNull(),
     photoDeletedAt: timestamptz("photo_deleted_at"),
+    /** Set when the drawing file was erased on the customer's request (SR-022 erasure). */
+    svgDeletedAt: timestamptz("svg_deleted_at"),
   },
   (t) => [index("drawings_expires_at_idx").on(t.expiresAt)],
 );
@@ -70,6 +72,10 @@ export const orders = pgTable(
     frameId: uuid("frame_id")
       .notNull()
       .references(() => frames.id),
+    // Snapshot of the frame as ordered (Q-41): renaming or resizing a frame later doesn't change it.
+    frameName: text("frame_name").notNull(),
+    frameWidthMm: integer("frame_width_mm").notNull(),
+    frameHeightMm: integer("frame_height_mm").notNull(),
     status: orderStatus("status").notNull(),
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
@@ -83,6 +89,8 @@ export const orders = pgTable(
     estimatedDeliveryDate: date("estimated_delivery_date", { mode: "string" }).notNull(),
     statusChangedAt: timestamptz("status_changed_at").notNull(),
     closedAt: timestamptz("closed_at"),
+    /** Set when the customer's details were erased on request (SR-022, Q-24). */
+    erasedAt: timestamptz("erased_at"),
     createdAt: timestamptz("created_at").notNull(),
   },
   (t) => [

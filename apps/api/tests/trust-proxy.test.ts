@@ -15,9 +15,9 @@ const upload = (forwardedFor: string) =>
 
 describe("client address behind the proxy (SR-017)", () => {
   it("AC-057 counts uploads per client address from nginx's X-Forwarded-For, not per proxy", async () => {
-    for (let i = 0; i < 10; i++) expect((await upload("203.0.113.1")).statusCode).toBe(400);
+    for (let i = 0; i < 10; i++) expect((await upload("203.0.113.1")).statusCode).toBe(415);
     expect((await upload("203.0.113.1")).statusCode).toBe(429);
     // Another customer behind the same nginx is not affected.
-    expect((await upload("203.0.113.2")).statusCode).toBe(400);
+    expect((await upload("203.0.113.2")).statusCode).toBe(415);
   });
 });

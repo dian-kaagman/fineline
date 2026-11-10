@@ -37,7 +37,7 @@ class Reject extends Error {
 }
 
 const XML_DECLARATION =
-  /^<\?xml\s+version\s*=\s*(["'])1\.[01]\1(\s+encoding\s*=\s*(["'])(UTF-8|utf-8)\3)?(\s+standalone\s*=\s*(["'])(yes|no)\6)?\s*\?>/;
+  /^<\?xml[ \t\r\n]+version[ \t\r\n]*=[ \t\r\n]*(["'])1\.[01]\1([ \t\r\n]+encoding[ \t\r\n]*=[ \t\r\n]*(["'])(UTF-8|utf-8)\3)?([ \t\r\n]+standalone[ \t\r\n]*=[ \t\r\n]*(["'])(yes|no)\6)?[ \t\r\n]*\?>/;
 const NAME = /[A-Za-z_:][A-Za-z0-9_:.-]*/y;
 const WHITESPACE = /[ \t\r\n]*/y;
 const ATTR_VALUE = /(?:"([^"<&]*)"|'([^'<&]*)')/y;
@@ -214,7 +214,9 @@ function readCanvas(attrs: Map<string, string>, limits: DrawingLimits): Canvas {
   if (width > limits.areaWidthMm + EPSILON || height > limits.areaHeightMm + EPSILON) {
     throw new Reject("larger_than_area");
   }
-  const viewBox = (attrs.get("viewBox") ?? "").trim().split(/[\s,]+/);
+  const viewBox = (attrs.get("viewBox") ?? "")
+    .replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "")
+    .split(/[ \t\r\n,]+/);
   const numbers = viewBox.map(Number);
   if (
     viewBox.length !== 4 ||
@@ -257,7 +259,12 @@ function inheritStyle(parent: Style, attrs: Map<string, string>): Style {
   return style;
 }
 
-const PATH_TOKEN = new RegExp(`\\s*,?\\s*(?:([MmLlHhVvCcQqZz])|(${NUMBER_SOURCE}))`, "y");
+// XML/SVG whitespace only (space, tab, CR, LF): JS `\s` would also accept U+00A0, U+2028 and
+// others that browsers and plotter software don't treat as separators.
+const PATH_TOKEN = new RegExp(
+  `[ \\t\\r\\n]*,?[ \\t\\r\\n]*(?:([MmLlHhVvCcQqZz])|(${NUMBER_SOURCE}))`,
+  "y",
+);
 const ARG_COUNT: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, Q: 4, Z: 0 };
 
 type PathToken = { cmd: string } | { num: number };
@@ -265,7 +272,7 @@ type PathToken = { cmd: string } | { num: number };
 function tokenizePath(d: string): PathToken[] {
   const tokens: PathToken[] = [];
   let pos = 0;
-  const trimmed = d.trimEnd();
+  const trimmed = d.replace(/[ \t\r\n]+$/, "");
   while (pos < trimmed.length) {
     PATH_TOKEN.lastIndex = pos;
     const m = PATH_TOKEN.exec(trimmed);

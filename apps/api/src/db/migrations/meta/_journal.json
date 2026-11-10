@@ -15,6 +15,13 @@
       "when": 1794320493461,
       "tag": "0001_default_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794326912040,
+      "tag": "0002_order_frame_snapshot_and_erasure",
+      "breakpoints": true
     }
   ]
 }

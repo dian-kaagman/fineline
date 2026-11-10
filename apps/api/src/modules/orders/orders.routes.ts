@@ -1,24 +1,50 @@
-import type { FastifyInstance } from "fastify";
-import { waitText } from "../../lib/errors.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { AttemptLimiter, type Reservation } from "../../lib/attempt-limiter.js";
+import type { Clock } from "../../lib/clock.js";
+import { rateLimited, waitText } from "../../lib/errors.js";
 import { noStore, sendFile } from "../../lib/http.js";
-import { LIMITS, rateLimitHook } from "../../lib/rate-limit.js";
+import { LIMITS } from "../../lib/rate-limit.js";
 import { parseIdParam } from "../../lib/validation.js";
 import type { AdminOrdersService } from "./admin-orders.service.js";
 import { parsePlaceOrder } from "./orders.schemas.js";
 import type { OrdersService } from "./orders.service.js";
 
-export function publicOrdersRoutes(service: OrdersService) {
-  return async function (app: FastifyInstance) {
-    const limit = rateLimitHook(
-      [app.createRateLimit(LIMITS.ordersPerIp)],
-      (wait) => `Too many tries in a short time. Please wait ${waitText(wait)} and try again.`,
-    );
+/** Answers that don't use up the per-address order budget: replays and rejected input (Q-36). */
+const NOT_COUNTED = new Set([200, 400, 413, 415]);
 
-    app.post("/api/v1/orders", { onRequest: [noStore, limit] }, async (request, reply) => {
-      const input = parsePlaceOrder(request.body);
-      const { replay, confirmation } = await service.placeOrder(input, request.log);
-      return reply.status(replay ? 200 : 201).send(confirmation);
-    });
+export function publicOrdersRoutes(service: OrdersService, clock: Clock) {
+  return async function (app: FastifyInstance) {
+    const perIp = new AttemptLimiter(clock, LIMITS.ordersPerIp.max, LIMITS.ordersPerIp.timeWindow);
+    const reservations = new WeakMap<FastifyRequest, Reservation>();
+
+    // Counted before the order runs, so parallel requests can't pass the limit together (SR-017).
+    const limit = async (request: FastifyRequest) => {
+      const attempt = perIp.reserve(request.ip);
+      if (!attempt.ok) {
+        request.log.warn(
+          { event: "rate_limited", route: request.routeOptions.url, ip: request.ip },
+          "rate limited",
+        );
+        throw rateLimited(
+          `Too many tries in a short time. Please wait ${waitText(attempt.retryAfterSeconds)} and try again.`,
+          attempt.retryAfterSeconds,
+        );
+      }
+      reservations.set(request, attempt.reservation);
+    };
+    const refundUncounted = async (request: FastifyRequest, reply: FastifyReply) => {
+      if (NOT_COUNTED.has(reply.statusCode)) reservations.get(request)?.refund();
+    };
+
+    app.post(
+      "/api/v1/orders",
+      { onRequest: [noStore, limit], onResponse: refundUncounted },
+      async (request, reply) => {
+        const input = parsePlaceOrder(request.body);
+        const { replay, confirmation } = await service.placeOrder(input, request.log);
+        return reply.status(replay ? 200 : 201).send(confirmation);
+      },
+    );
   };
 }
 

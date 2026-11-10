@@ -1,9 +1,11 @@
 /** Applies the SQL migrations to DATABASE_URL. Needs only DATABASE_URL, not the full app config. */
+import { databaseUrlProblem } from "../config.js";
 import { createDatabase, runMigrations } from "../db/client.js";
 
-const url = process.env.DATABASE_URL;
-if (!url || !/^postgres(ql)?:\/\//.test(url)) {
-  console.error("DATABASE_URL must be a postgres:// connection URL");
+const url = process.env.DATABASE_URL ?? "";
+const problem = databaseUrlProblem(url);
+if (problem) {
+  console.error(`DATABASE_URL ${problem}`);
   process.exit(1);
 }
 
