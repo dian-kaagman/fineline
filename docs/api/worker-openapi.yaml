@@ -85,6 +85,8 @@ paths:
           description: "`photo_too_small` (shortest side under minShortSidePx), `photo_too_many_pixels` (more than 50 megapixels, checked before decoding - SR-003), `photo_unreadable` (cannot be decoded, or not JPEG/PNG/HEIF), `validation_failed` (bad parameters)."
         "401":
           description: "`unauthenticated`: missing or wrong bearer token."
+        "413":
+          description: "`payload_too_large`: request body over 16 MiB (cannot happen behind the API's 15 MiB limit)."
         "422":
           description: "`no_drawable_content`: the photo yields no usable lines (e.g. a blank or nearly uniform image)."
         "503":
