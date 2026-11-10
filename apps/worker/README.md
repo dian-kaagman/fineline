@@ -7,7 +7,7 @@ token. Browsers never reach it, and it stores nothing (SR-005).
 
 Contract: [`docs/api/worker-openapi.yaml`](../../docs/api/worker-openapi.yaml). Approach:
 [ADR 0002](../../docs/decisions/0002-python-worker-edge-contour-line-drawing.md) and the
-"Conversion approach" section of `openspec/changes/kickstart/design.md`.
+"Conversion approach" section of `openspec/changes/archive/2026-11-10-kickstart/design.md`.
 
 ## Quick start
 

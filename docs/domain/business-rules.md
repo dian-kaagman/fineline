@@ -90,7 +90,7 @@ Customers agree to the photo terms before ordering: the photo is used only to ma
 - **Source:** [pack: rules.md#BR-010]; retention periods: Default (confirm) accepted as [lead decision] (Q-7); preview deleted with the unordered photo: [assumption] (Q-23); how long drawings are kept: Q-25
 - **Enforced in:** backend (access checks; scheduled deletion)
 - **Applies to slice:** yes
-- **Timing:** a preview can't be ordered from the moment its 24 hours are over; the files are removed by the retention sweep, which runs every hour, so a photo is physically deleted between 24 and 25 hours after upload (and an order photo within an hour after its 30 days). Texts shown to customers must therefore say "after 24 hours", not "within 24 hours". [assumption] (Q-40), [repo: openspec/changes/kickstart/design.md#Retention]
+- **Timing:** a preview can't be ordered from the moment its 24 hours are over; the files are removed by the retention sweep, which runs every hour, so a photo is physically deleted between 24 and 25 hours after upload (and an order photo within an hour after its 30 days). Texts shown to customers must therefore say "after 24 hours", not "within 24 hours". [assumption] (Q-40), [repo: openspec/changes/archive/2026-11-10-kickstart/design.md#Retention]
 - **Example:** a photo uploaded at 10:00 on Tuesday 3 November and not ordered can't be ordered from 10:00 on Wednesday 4 November and is deleted by 11:00. FL-2026-0042 shipped on Tuesday 1 December: its photo is deleted on Thursday 31 December; its drawing can still be downloaded.
 
 ## BR-011 Admin access
@@ -151,7 +151,7 @@ Placing an order again for a drawing that has already been ordered, with that dr
 
 ## Rule to scenario map
 
-Scenarios are in `openspec/changes/kickstart/specs/<capability>/spec.md`.
+Scenarios are in `openspec/specs/<capability>/spec.md` (the kickstart change is archived in `openspec/changes/archive/2026-11-10-kickstart/`).
 
 | Rule | Scenarios |
 |---|---|

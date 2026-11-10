@@ -2,7 +2,7 @@
 
 **Scope:** the kickstart slice: `apps/web` (customer shop and admin tool, served by nginx), `apps/api` (public and admin API, PostgreSQL, file storage, retention sweep), `apps/worker` (photo-to-SVG conversion), `docker-compose.yml`, CI. No payment, no customer accounts, one admin.
 **Data classification:** personal data under GDPR: customer photos (faces, sometimes children), drawings made from them (a portrait can identify a person), names, emails, NL/BE addresses, client IP addresses. Business data whose integrity matters: order statuses, stock, prices, delivery dates. Public: the frame catalogue.
-**Sources:** `docs/brief.md`, `openspec/changes/kickstart/` (proposal, design, specs, tasks), `docs/api/openapi.yaml`, `docs/api/worker-openapi.yaml`, `docs/domain/` (BR-001 to BR-017, Q-1 to Q-32), the domain pack (`constraints.md`), ADR 0002, 0003, 0006, 0007.
+**Sources:** `docs/brief.md`, `openspec/changes/archive/2026-11-10-kickstart/` (archived kickstart change: proposal, design, specs, tasks), `docs/api/openapi.yaml`, `docs/api/worker-openapi.yaml`, `docs/domain/` (BR-001 to BR-017, Q-1 to Q-32), the domain pack (`constraints.md`), ADR 0002, 0003, 0006, 0007.
 
 **Scale:** one owner, a handful of orders a day, peaks around Christmas. The controls below are sized for that: a short list of strong defaults that the whole codebase copies, not enterprise machinery.
 

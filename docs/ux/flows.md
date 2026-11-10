@@ -1,6 +1,6 @@
 # User flows - first slice (kickstart)
 
-Sources: `openspec/changes/kickstart/` (proposal, design, `specs/*/spec.md` with AC-001..AC-066), `docs/domain/business-rules.md` (BR-001..BR-018), `docs/domain/glossary.md`, `docs/api/openapi.yaml`. Screens (`C*`, `A*`, `X*`) are in `screens.md`, texts (keys) in `content.md`, requirements `UX-xxx` in `accessibility.md`.
+Sources: `openspec/changes/archive/2026-11-10-kickstart/` (archived kickstart change: proposal, design, `specs/*/spec.md` with AC-001..AC-066), `docs/domain/business-rules.md` (BR-001..BR-018), `docs/domain/glossary.md`, `docs/api/openapi.yaml`. Screens (`C*`, `A*`, `X*`) are in `screens.md`, texts (keys) in `content.md`, requirements `UX-xxx` in `accessibility.md`.
 
 Words: always the glossary's terms - **photo**, **drawing**, **preview**, **frame**, **stock**, **order**, **order number**, **estimated delivery date** (admin: "Delivery date"), **lead time**, **photo terms**, status names **Received, Drawing, Drawn, Ready to ship, Shipped, Cancelled**. Never "upload", "sketch", "canvas", "inventory" or "Submit" in the UI.
 
