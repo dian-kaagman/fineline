@@ -1,0 +1,5 @@
+# Findings reviewed and accepted as non-secrets. One fingerprint per line (commit:file:rule:line).
+# apps/api/tests/logging.test.ts:50 - a deliberately wrong, made-up admin password used to prove that a
+# failed login never appears in the logs (AC-023, SR-018). Not a credential.
+79aae37a6cfb8e21b73890b37a464013f4f4f952:apps/api/tests/logging.test.ts:generic-api-key:50
+apps/api/tests/logging.test.ts:generic-api-key:50
