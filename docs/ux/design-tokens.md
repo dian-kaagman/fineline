@@ -26,7 +26,7 @@ Look and feel: a quiet "paper and ink" shop. Warm off-white page, near-black ink
 | color.on-danger | #ffffff | Text on destructive button |
 | color.danger-subtle | #fdeceb | Error summary and error banner background |
 | color.success / success-subtle | #1e6b3a / #e8f4ec | Success banner (saved, status changed) |
-| color.warning / warning-subtle | #7a4f00 / #fff4d6 | Preview expiry notice, "Late" tag |
+| color.warning / warning-subtle | #7a4f00 / #fff4d6 | "Preview no longer available" and "frame just sold out" notices |
 | color.info / info-subtle | #1d4f91 / #e8f0fb | Withdrawal notice, neutral notices |
 | color.disabled-text / disabled-bg | #625e59 / #ebe7e1 | Disabled controls (exempt from contrast rules, kept readable anyway) |
 
@@ -85,8 +85,8 @@ All sizes in `rem` so they follow the browser's text size (UX-013). Line heights
 | Token | Value | What changes |
 |---|---|---|
 | bp.sm | 30em (480 px) | Frame cards 2 per row |
-| bp.md | 48em (768 px) | h1 32 px; admin lists become tables (below: stacked rows); admin form fields in 2 columns |
-| bp.lg | 64em (1024 px) | Order detail in 2 columns (drawing left, facts and actions right); customer preview next to its actions |
+| bp.md | 48em (768 px) | h1 32 px; admin form fields in 2 columns |
+| bp.lg | 64em (1024 px) | Order detail in 2 columns (drawing left, facts and actions right); customer preview next to its actions. Below it, admin tables scroll inside their own region (UX-013) |
 | bp.xl | 80em (1280 px) | Wider admin margins only |
 
 Media queries can't read custom properties; use the literal `em` values (listed in `tokens.css`). The design must work from 320 CSS px wide (UX-013).
@@ -137,8 +137,8 @@ Computed with `python3 docs/ux/check-contrast.py` (WCAG relative-luminance formu
 | `color.success` #1e6b3a | `color.success-subtle` #e8f4ec | 5.77:1 | 4.5:1 | pass | Success banner text |
 | `color.success` #1e6b3a | `color.bg` #faf8f5 | 6.15:1 | 4.5:1 | pass | Success text on page |
 | `color.text` #1a1a1a | `color.success-subtle` #e8f4ec | 15.40:1 | 4.5:1 | pass | Body text inside success banner |
-| `color.warning` #7a4f00 | `color.warning-subtle` #fff4d6 | 6.51:1 | 4.5:1 | pass | Warning banner text (preview expiry, Late tag) |
-| `color.warning` #7a4f00 | `color.surface` #ffffff | 7.13:1 | 4.5:1 | pass | Late tag text on table rows |
+| `color.warning` #7a4f00 | `color.warning-subtle` #fff4d6 | 6.51:1 | 4.5:1 | pass | Warning notice text (preview no longer available, sold out) |
+| `color.warning` #7a4f00 | `color.surface` #ffffff | 7.13:1 | 4.5:1 | pass | Warning text on cards and tables |
 | `color.info` #1d4f91 | `color.info-subtle` #e8f0fb | 7.09:1 | 4.5:1 | pass | Info notice text (withdrawal notice) |
 | `color.text` #1a1a1a | `color.info-subtle` #e8f0fb | 15.16:1 | 4.5:1 | pass | Body text in info notice |
 | `color.disabled-text` #625e59 | `color.disabled-bg` #ebe7e1 | 5.22:1 | 4.5:1 | pass | Disabled control label (exempt, kept readable) |
@@ -151,7 +151,7 @@ Computed with `python3 docs/ux/check-contrast.py` (WCAG relative-luminance formu
 | `color.status-cancelled-text` #4a4743 | `color.status-cancelled-bg` #ebe7e1 | 7.50:1 | 4.5:1 | pass | Badge: Cancelled |
 | `color.primary-hover` #0b464c | `color.surface` #ffffff | 10.53:1 | 4.5:1 | pass | Secondary button label, hover |
 | `color.danger` #b42318 | `color.bg` #faf8f5 | 6.20:1 | 3.0:1 | pass | Invalid input border / error icon on page |
-| `color.warning` #7a4f00 | `color.bg` #faf8f5 | 6.72:1 | 4.5:1 | pass | Warning text on page (Late tag outside table) |
+| `color.warning` #7a4f00 | `color.bg` #faf8f5 | 6.72:1 | 4.5:1 | pass | Warning text on page |
 
 45/45 pairs pass.
 

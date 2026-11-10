@@ -45,8 +45,8 @@ PAIRS = [
     ("success", "success-subtle", "text", "Success banner text"),
     ("success", "bg", "text", "Success text on page"),
     ("text", "success-subtle", "text", "Body text inside success banner"),
-    ("warning", "warning-subtle", "text", "Warning banner text (preview expiry, Late tag)"),
-    ("warning", "surface", "text", "Late tag text on table rows"),
+    ("warning", "warning-subtle", "text", "Warning notice text (preview no longer available, sold out)"),
+    ("warning", "surface", "text", "Warning text on cards and tables"),
     ("info", "info-subtle", "text", "Info notice text (withdrawal notice)"),
     ("text", "info-subtle", "text", "Body text in info notice"),
     ("disabled-text", "disabled-bg", "text", "Disabled control label (exempt, kept readable)"),
@@ -59,7 +59,7 @@ PAIRS = [
     ("status-cancelled-text", "status-cancelled-bg", "text", "Badge: Cancelled"),
     ("primary-hover", "surface", "text", "Secondary button label, hover"),
     ("danger", "bg", "ui", "Invalid input border / error icon on page"),
-    ("warning", "bg", "text", "Warning text on page (Late tag outside table)"),
+    ("warning", "bg", "text", "Warning text on page"),
 ]
 
 MIN = {"text": 4.5, "large": 3.0, "ui": 3.0}

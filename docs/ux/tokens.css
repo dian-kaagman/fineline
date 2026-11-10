@@ -112,8 +112,8 @@
 /* Breakpoints (min-width, mobile first). CSS custom properties can't be used in
  * media queries, so use these literal values:
  *   --bp-sm: 30em   (480px)  larger phones
- *   --bp-md: 48em   (768px)  tablets; admin tables switch from stacked rows to a table
- *   --bp-lg: 64em   (1024px) laptops; order detail uses two columns
+ *   --bp-md: 48em   (768px)  tablets; admin form fields in 2 columns
+ *   --bp-lg: 64em   (1024px) laptops; order detail uses two columns; below it admin tables scroll in their own region
  *   --bp-xl: 80em   (1280px) wide laptops
  */
 

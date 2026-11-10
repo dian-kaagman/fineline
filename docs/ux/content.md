@@ -2,8 +2,9 @@
 
 English UI, ready for translation (constraints.md; Q-28). Rules for builders:
 
-- Every string comes from one message catalogue (e.g. `apps/web/src/i18n/en.ts`) under the key in the first column. No strings in components, no concatenating sentences from pieces; use the named placeholders shown in `{braces}` (ICU message format, so Dutch can reorder words) (UX-014).
-- The web app shows **its own text for each API error `code`** from the tables below. For an unknown code it shows the API's `message` (which is safe to show), and for no response at all `*.error.network`.
+- Every string comes from one flat message catalogue (key -> string, e.g. `apps/web/src/i18n/en.ts`) under the key in the first column. No strings in components and no sentences glued together from pieces; fill the named placeholders shown in `{braces}` with a simple replace, so a translation can move them. Where the number changes the wording there are two keys, `.one` and `.other` (UX-014).
+- The web app shows **its own text for each API error `code`** from the tables below. For an unknown code it shows the API's `message` (which is safe to show), and for no response at all `*.error.network`. Any HTTP 413 means "too large" even without a JSON body (nginx's own 413 also carries `photo_too_large`, but don't rely on the body).
+- `validation_failed` `details[].field` (dotted path) is mapped to the field's own text below: the field's "required" text when the value is empty, otherwise its "invalid" text. The browser runs the same checks first, so these mostly catch edge cases.
 - Where a scenario (`AC-xxx`) quotes a message, the text here contains it word for word; tests should match that AC text. A reference like "(AC-002)" at the end of a text is a note, not part of the text.
 - Glossary terms only: photo, drawing, preview, frame, stock, order, order number, estimated delivery date (admin: delivery date), lead time, photo terms, stroke. Buttons say what they do; never "Submit", "OK" or "Click here".
 - Texts marked **(owner to confirm)** are placeholders that need the owner's (or a lawyer's) wording before go-live.
@@ -15,13 +16,13 @@ English UI, ready for translation (constraints.md; Q-28). Rules for builders:
 | Price | `Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" })` on `priceCents / 100`; always incl. VAT | 4995 -> "€49.95" |
 | Estimated delivery date / order date, long (customer, A3) | Calendar date `YYYY-MM-DD` formatted as a date only, no time-zone shift: `Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })` on `Date.UTC(y, m-1, d)` | "2026-11-17" -> "Tuesday 17 November 2026" |
 | Dates, short (A2 list) | as above with `weekday: "short", month: "short"` | "Tue 17 Nov 2026" |
-| Order date from a timestamp | the calendar date of `createdAt` in `Europe/Amsterdam` (until G-3 gives `orderDate`) | "2026-11-05T23:30:00Z" -> "Friday 6 November 2026" |
+| Order date | `orderDate` from the API (`YYYY-MM-DD`, already the Amsterdam date), formatted like the delivery date; never derived from `createdAt` | "2026-11-06" -> "Friday 6 November 2026" |
 | Frame size | `{widthMm} x {heightMm} mm` (plain "x", as in the specs) | "210 x 297 mm" |
-| Drawing size (customer) | mm / 10, at most one decimal, in cm | 180 x 267 mm -> "18 x 26.7 cm" |
 | Total line length (admin) | mm / 1000, one decimal, "m" | 14250.5 -> "14.3 m" |
 | Order number | as returned, never reformatted, mono font | "FL-2026-0042" |
 | Status | label from the status table below, never the code | `ready_to_ship` -> "Ready to ship" |
-| Wait time (429) | `Retry-After` seconds rounded up to whole minutes; under 60 s: "a minute" | 90 -> "2 minutes" |
+| Wait time (429) | `Retry-After` seconds rounded up to whole minutes: `wait.one` "1 minute" / `wait.other` "{n} minutes" | 90 -> "2 minutes"; 900 -> "15 minutes" |
+| Expiry time (C3) | `expiresAt` in `Europe/Amsterdam`: `Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Amsterdam" })` and the long date without year | "10:00 on Wednesday 4 November" |
 
 ## Status names
 
@@ -57,7 +58,7 @@ Status action labels (buttons):
 | shop.steps.label | Progress | `aria-label` of the step list |
 | shop.steps.status | Step {current} of {total}: {name} | Visible text above the step list |
 | shop.steps.photo / preview / frame / details | Photo / Preview / Frame / Details | Step names |
-| shop.footer.contact | Questions? Email us at {contactEmail} | **(owner to confirm)** the contact address (G-7) |
+| shop.footer.contact | Questions? Email us at {contactEmail} | `{contactEmail}` from the build-time variable `VITE_CONTACT_EMAIL`, shown as a `mailto:` link |
 | shop.footer.privacy | Your photo is turned into a drawing on our own server and is never shared. | |
 | shop.startAgain.heading | Start again? | X5 dialog from the wordmark |
 | shop.startAgain.body | Your drawing and the details you entered will be cleared. | |
@@ -84,7 +85,6 @@ Status action labels (buttons):
 | c1.requirements | JPEG, PNG or HEIC, up to 15 MB, at least 800 pixels on the shortest side. | Linked to the file input |
 | c1.privacy | We only use your photo to make your drawing. If you don't order, we delete it within 24 hours. | |
 | c1.choose | Choose a photo | Primary button (label of the file input) |
-| c1.dropHint | or drop a photo here | Only from `bp.md`, inside the drop zone |
 | c1.tryAgain | Try again | Resends the same photo |
 | c1.chooseAnother | Choose another photo | |
 | c1.cancelled | Stopped. Choose a photo when you're ready. | Info notice after Cancel on C2 |
@@ -95,13 +95,14 @@ C1 errors (danger notice, `role="alert"`, focused):
 |---|---|---|
 | c1.error.missing | `photo_missing` | Choose a photo to make your drawing. |
 | c1.error.unsupportedType | `photo_unsupported_type`, pre-check | Use a JPEG, PNG or HEIC photo. (AC-002) |
-| c1.error.tooLarge | `photo_too_large` (413), pre-check | The photo must be at most 15 MB. Choose a smaller photo. (AC-003) |
+| c1.error.tooLarge | `photo_too_large`, any HTTP 413 (also nginx's), pre-check | The photo must be at most 15 MB. Choose a smaller photo. (AC-003) |
 | c1.error.tooSmall | `photo_too_small`, pre-check | The photo's shortest side must be at least 800 pixels. Choose a larger photo. (AC-004) |
+| c1.error.tooManyPixels | `photo_too_many_pixels` | The photo may have at most 50 megapixels. Choose a smaller photo. (AC-051, AC-053) |
+| c1.error.invalidUpload | `validation_failed` (e.g. two files, AC-052) | Choose one photo and try again. |
 | c1.error.unreadable | `photo_unreadable` | We couldn't open this photo. It may be damaged. Please try another photo. |
 | c1.error.noDrawableContent | `photo_no_drawable_content` | We couldn't make a drawing from this photo. Please try another photo. A photo with good light and a clear face works best. (AC-008) |
-| c1.error.conversionUnavailable | `conversion_unavailable` (503) | We can't make drawings right now. Please try again in a few minutes. |
-| c1.error.rateLimited | `rate_limited` (429) | You've made a lot of drawings in a short time. Please wait {wait} and try again. |
-| c1.error.timeout | no answer 45 s after the upload | Making your drawing is taking much longer than usual. Please try again. |
+| c1.error.conversionUnavailable | `conversion_unavailable` (503, also when busy with `Retry-After`), HTTP 502/504 | We can't make drawings right now. Please try again in a few minutes. (AC-054, AC-055) |
+| c1.error.rateLimited | `rate_limited` (429) | You've made a lot of drawings in a short time. Please wait {wait} and try again. (AC-057) |
 | c1.error.network | no response / offline | We couldn't send your photo. Check your internet connection and try again. |
 
 ## C2 Making your drawing
@@ -111,9 +112,7 @@ C1 errors (danger notice, `role="alert"`, focused):
 | c2.title | Step 1 of 4: Making your drawing | |
 | c2.heading | Making your drawing | h1 |
 | c2.photoAlt | Your photo | Thumbnail alt |
-| c2.uploading | Sending your photo... {percent} % | Phase 1; live region announces only "Sending your photo" once |
-| c2.converting | Finding the lines in your photo. This usually takes a few seconds. | Phase 2, announced |
-| c2.slow | Still working - detailed photos take a little longer. | Phase 3 (10 s), announced |
+| c2.working | Making your drawing. This usually takes a few seconds. | Visible text; announced once in the live region (UX-008) |
 | c2.progressLabel | Progress of your drawing | `aria-label` of `<progress>` |
 | c2.cancel | Cancel | Secondary button |
 
@@ -124,17 +123,14 @@ C1 errors (danger notice, `role="alert"`, focused):
 | c3.title | Step 2 of 4: Your drawing | |
 | c3.heading | Your drawing is ready | h1 |
 | c3.preview.alt | Preview of your line drawing, made from your photo | `alt` of the preview `<img>` (UX-009) |
-| c3.size | Drawn in black fineliner by our pen robot, {width} x {height} cm. | Sizes from `widthMm`/`heightMm` |
+| c3.size | Drawn in black fineliner by our pen robot, sized to fit A4 paper. | No measurements: a landscape photo is a band inside the portrait drawing area. **(owner to confirm the paper size, Q-2)** |
 | c3.whatYouSee | What you see is exactly what we'll draw. | Info notice (BR-005) |
 | c3.notQuiteRight | Not quite right? A photo with good light, a clear face and a plain background usually gives a clearer drawing. | |
 | c3.continue | Choose a frame | Primary |
 | c3.tryAnother | Try another photo | Secondary (AC-009 names this text) |
-| c3.viewFull | View full size | Text button |
-| c3.full.heading | Your drawing, full size | Dialog h2 |
-| c3.full.close | Close | |
 | c3.expiryNote | You can order this drawing until {time} on {date}. | Small text under the actions; from `expiresAt` in Europe/Amsterdam, e.g. "10:00 on Wednesday 4 November" |
 | c3.expired | This preview is no longer available. Please upload your photo again. | Warning notice (AC-011, AC-022) |
-| c3.expired.detail | We keep previews for 24 hours. Your frame choice and details are kept. | Shown only when the browser knows `expiresAt` has passed; for a 404 without that, only `c3.expired` |
+| c3.expired.detail | Your frame choice and details are kept. | Always shown under `c3.expired` |
 | c3.expired.action | Upload your photo again | Primary |
 
 ## C4 Frame
@@ -209,7 +205,7 @@ C5 field errors (inline under the label, also in the error summary as links; API
 | c5.error.postalCode.invalidBE | Postal code, BE | Enter a Belgian postal code of 4 digits, like 1000. |
 | c5.error.city.required | City (`address.city`) | Enter your city. (AC-014) |
 | c5.error.terms.required | Photo terms (`acceptedPhotoTerms`), code `photo_terms_not_accepted` | Tick the box to agree to the photo terms. We can only make your drawing with your agreement. (AC-016) |
-| c5.error.field.generic | any other field | Check this field. (followed by the API's `details[].message`) |
+| c5.error.field.generic | any other field (e.g. an unexpected field, AC-059 - the web app never sends one) | Check this field. (followed by the API's `details[].message`) |
 
 C5 order errors (danger notice above **Place order**, focused, unless the flow moves to another step):
 
@@ -217,8 +213,8 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 |---|---|---|
 | (c4.soldOut) | `frame_sold_out` (409), `frame_not_found` (422) | Go to C4 sold-out state |
 | (c3.expired) | `drawing_not_found` (404) | Go to C3 expired state |
-| c5.error.alreadyOrdered | `drawing_already_ordered` (409) | This drawing has already been ordered. If you didn't see your order number, email us at {contactEmail}. |
-| c5.error.rateLimited | `rate_limited` (429) | Too many tries in a short time. Please wait {wait} and try again. |
+| (C6) | 200 or 201 with `OrderConfirmation` | Show C6 from the response (a 200 is the replay of an order already placed with this preview, BR-018, AC-058) |
+| c5.error.rateLimited | `rate_limited` (429) | Too many tries in a short time. Please wait {wait} and try again. (AC-060) |
 | c5.error.network | no response, 5xx | We couldn't reach our shop. Check your internet connection and try again. |
 
 ## C6 Confirmation
@@ -228,14 +224,12 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | c6.title | Order placed - Fineline | |
 | c6.heading | Thank you, your order is placed | h1 |
 | c6.orderNumber.label | Order number | |
-| c6.copy | Copy order number | |
-| c6.copied | Copied | Button label for 3 s; status region: "Order number copied" |
-| c6.copyFailed | Couldn't copy. Please write the order number down. | If the Clipboard API fails |
-| c6.keepNumber | Keep this order number. You'll need it if you contact us about your order. | |
+| c6.keepNumber | Please write down this order number or take a screenshot. You'll need it if you contact us, and this page isn't kept if you reload it. | |
 | c6.delivery.label | Estimated delivery date | |
 | c6.frame.label | Frame | |
 | c6.price.label | Price | Value: "{price} (including VAT)" |
-| c6.address.label | Delivery address | |
+| c6.name.label | Name | `customerName` from the response |
+| c6.address.label | Delivery address | `address` from the response (3 lines: street + house number; postal code + city; country name) |
 | c6.next.heading | What happens next | |
 | c6.next.draw | Our pen robot draws your portrait in black fineliner. | |
 | c6.next.frame | We frame and pack it by hand. | |
@@ -253,7 +247,7 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | x3.toShop | Go to the shop |
 | x3.toOrders | Go to orders |
 
-## Admin shared (X2, X4, X5)
+## Admin shared (X2, X5)
 
 | Key | Text | Notes |
 |---|---|---|
@@ -271,10 +265,6 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | admin.error.notFound | This item doesn't exist any more. | 404 on an action |
 | admin.error.invalidTransition | {orderNumber} is {currentStatus} now, so it can't be {targetAction}. The order has been reloaded. | `invalid_transition` (409), AC-034; `{targetAction}` from: "marked drawn", "marked ready to ship", "marked shipped", "cancelled", "moved back to Drawing" |
 | admin.error.rateLimited | Too many tries. Please wait {wait} and try again. | |
-| x4.heading | Your session has ended | Log in again dialog |
-| x4.body | Log in again to continue. Nothing you entered is lost. | |
-| x4.submit | Log in | |
-| x4.toLoginPage | Go to the login page | |
 | x5.markShipped.heading | Mark {orderNumber} as shipped? | |
 | x5.markShipped.body | Only do this after handing it to the carrier. Shipped orders can't change any more. | |
 | x5.markShipped.confirm | Mark shipped | |
@@ -299,9 +289,9 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | a1.error.username.required | Enter your username. | Inline |
 | a1.error.password.required | Enter your password. | Inline |
 | a1.error.invalidCredentials | Wrong username or password. | `invalid_credentials` (401), AC-025; same text for both cases |
-| a1.error.rateLimited | Too many login attempts. Please wait {wait} and try again. | `rate_limited` (429) |
+| a1.error.rateLimited | Too many login attempts. Please wait {wait} and try again. | `rate_limited` (429), AC-061 |
 | a1.loggedOut | You're logged out. | Success notice (AC-028) |
-| a1.sessionEnded | Log in to continue. | Info notice when redirected with `next` |
+| a1.sessionEnded | Your session has ended. Log in again to continue. | Info notice when redirected with `next` (UX-023) |
 
 ## A2 Orders
 
@@ -313,9 +303,9 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | a2.filter.open | Open | Received, Drawing, Drawn, Ready to ship |
 | a2.filter.all | All | Other filters use the status labels |
 | a2.refresh | Refresh list | |
-| a2.caption | {filterName} orders, earliest delivery date first - {count, plural, one {# order} other {# orders}} | Table caption; "All orders, ..." for All |
+| a2.caption.one | {filterName} orders, earliest delivery date first - 1 order | Table caption; filterName "Open", "Received", ..., "All" |
+| a2.caption.other | {filterName} orders, earliest delivery date first - {count} orders | |
 | a2.col.orderNumber / status / deliveryDate / orderDate / customer / frame / nextStep | Order number / Status / Delivery date / Order date / Customer / Frame / Next step | Column headers |
-| a2.late | Late | Tag with warning icon; accessible text "Late: delivery date has passed" |
 | a2.loading | Loading orders... | |
 | a2.empty.open | No open orders. New orders appear here as soon as customers place them. | |
 | a2.empty.filtered | No orders with status {status}. | |
@@ -345,23 +335,22 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | a3.delivery.save | Save delivery date | |
 | a3.delivery.cancel | Cancel | Closes the editor |
 | a3.delivery.closed | The delivery date of a shipped or cancelled order can't be changed. | `order_closed` (409) and shown instead of the button |
-| a3.date.error.beforeOrderDate | The delivery date can't be before the order date ({orderDate}). | AC-038 |
-| a3.date.error.invalid | Enter a date, like 20/11/2026. | Bad or empty date |
+| a3.date.error.beforeOrderDate | The delivery date can't be before the order date ({orderDate}). | `delivery_date_before_order_date` (400), AC-038 |
+| a3.date.error.invalid | Enter a date, like 20/11/2026. | `validation_failed`, or an empty field |
 | a3.done.date | Delivery date changed to {date}. | Status region |
 | a3.drawing.heading | Drawing | |
 | a3.drawing.alt | Drawing for order {orderNumber} | |
 | a3.drawing.size | Size | "180 x 267 mm" |
 | a3.drawing.strokes | Strokes | "{count} strokes" |
 | a3.drawing.length | Total line length | "14.3 m" |
-| a3.drawing.notShown | The drawing can't be shown here yet. Use Download SVG to open the file. | Fallback until G-1 |
+| a3.drawing.error | The drawing couldn't be loaded. | With **Try again** (`admin.retry`) |
 | a3.photo.heading | Customer's photo | |
 | a3.photo.alt | Customer's photo for order {orderNumber} | |
 | a3.photo.deleted | The customer's photo was deleted 30 days after the order was closed. The drawing is kept. | `photoAvailable: false` / `photo_deleted` (410), AC-012 |
-| a3.photo.noPreview | This photo can't be shown in this browser. | HEIC (G-4) |
+| a3.photo.noPreview | This photo can't be shown in this browser. | When the `<img>` fails to load, e.g. HEIC in Chrome or Firefox |
 | a3.photo.download | Download photo | |
 | a3.customer.heading | Customer | |
 | a3.customer.name / email / address | Name / Email / Delivery address | |
-| a3.copyAddress | Copy address | Status region: "Address copied" |
 | a3.order.heading | Order | |
 | a3.order.date / frame / price | Order date / Frame / Price | |
 | a3.notFound.heading | Order not found | |
@@ -395,7 +384,7 @@ C5 order errors (danger notice above **Place order**, focused, unless the flow m
 | a5.name.hint | Shown to customers, like Oak A4. | |
 | a5.width.label | Inner width (mm) | |
 | a5.height.label | Inner height (mm) | |
-| a5.size.hint | The visible inside of the frame, portrait. At least {areaWidth} x {areaHeight} mm so the drawing fits. | Default 180 x 267 (G-5) |
+| a5.size.hint | The visible inside of the frame, portrait. At least {areaWidth} x {areaHeight} mm so the drawing fits. | From `drawingAreaWidthMm` / `drawingAreaHeightMm` of `GET /admin/settings` |
 | a5.price.label | Price (€, including VAT) | |
 | a5.price.hint | Like 49.95 | |
 | a5.stock.label | Starting stock | |
@@ -416,12 +405,12 @@ Frame form errors (A5 and A6):
 | frame.error.name.tooLong | Name | The name must be 100 characters or fewer. |
 | frame.error.width.invalid | Inner width | Enter the inner width as a whole number of millimetres. |
 | frame.error.height.invalid | Inner height | Enter the inner height as a whole number of millimetres. |
-| frame.error.tooSmall | Width and height, `frame_too_small` | The frame must be at least {areaWidth} x {areaHeight} mm inside, so the drawing fits. (AC-040) |
+| frame.error.tooSmall | `widthMm` / `heightMm` (browser check against the drawing area from `GET /admin/settings`, or API details) | The frame must be at least {areaWidth} x {areaHeight} mm inside, so the drawing fits. (AC-040) |
 | frame.error.price.invalid | Price | Enter a price in euros above 0, like 49.95. (AC-041) |
 | frame.error.stock.invalid | Starting stock | Enter a starting stock of 0 or more, as a whole number. (AC-041) |
-| frame.error.photo.missing | Photo, `photo_missing` | Choose a photo of the frame. (AC-041) |
-| frame.error.photo.unsupportedType | Photo, `photo_unsupported_type` | Use a JPEG, PNG or WebP photo. |
-| frame.error.photo.tooLarge | Photo, 413 | The photo must be at most 5 MB. |
+| frame.error.photo.missing | `photo`, when no file was chosen | Choose a photo of the frame. (AC-041) |
+| frame.error.photo.unsupportedType | `photo`, when a file was chosen | Use a JPEG, PNG or WebP photo. |
+| frame.error.photo.tooLarge | `photo`, any HTTP 413 | The photo must be at most 5 MB. |
 
 ## A6 Edit frame
 
@@ -465,7 +454,8 @@ Frame form errors (A5 and A6):
 | a7.leadTime.hint | Working days are Monday to Friday; public holidays count as working days. The new lead time applies to orders placed from now on. Existing orders keep their delivery date. | |
 | a7.save | Save lead time | |
 | a7.saving | Saving... | |
-| a7.done | Lead time saved: {days, plural, one {# working day} other {# working days}}. It applies to orders placed from now on. | AC-045 |
+| a7.done.one | Lead time saved: 1 working day. It applies to orders placed from now on. | AC-045 |
+| a7.done.other | Lead time saved: {days} working days. It applies to orders placed from now on. | AC-045 |
 | a7.error.leadTime | The lead time must be a whole number from 1 to 60. | AC-046 (0, 2.5, 61, empty) |
-| a7.drawingArea | Drawing area: {width} x {height} mm (set in the deployment configuration) | Only if G-5 is added |
+| a7.drawingArea | Drawing area: {width} x {height} mm (set in the deployment configuration) | From `GET /admin/settings` (read-only) |
 | a7.error.load | We couldn't load the settings. Check the connection and try again. | |
