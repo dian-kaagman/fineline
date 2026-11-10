@@ -43,8 +43,8 @@
 
 ## 4. Integration (lead)
 
-- [ ] 4.1 `docker-compose.yml` (db, worker, api, web) with internal networks, only web published, resource limits, read-only worker, dropped capabilities, and root `.env.example` with failing placeholders (SR-004, SR-005, SR-015, SR-020, SR-021)
-- [ ] 4.2 `.github/workflows/ci.yml` with a job per part, the `specs` job, dependency audit, secret scan, compose config check, contrast check and read-only permissions; Dependabot config (SR-020, SR-021)
-- [ ] 4.3 Root `README.md` and `CLAUDE.md`
-- [ ] 4.4 Automated end-to-end smoke script `scripts/smoke.mjs` run against all parts together (locally and in a CI `compose-smoke` job): upload a photo, order, log in, download for the arm, check security headers (AC-001, AC-005, AC-007, AC-018, AC-031, AC-065); `docker-compose.dev.yml` publishing the database on 127.0.0.1
-- [ ] 4.5 Verify from a clean clone and archive the change
+- [x] 4.1 `docker-compose.yml` (db, worker, api, web) with internal networks, only web published, resource limits, read-only worker, dropped capabilities, and root `.env.example` with failing placeholders (SR-004, SR-005, SR-015, SR-020, SR-021)
+- [x] 4.2 `.github/workflows/ci.yml` with a job per part, the `specs` job, dependency audit, secret scan, compose config check, contrast check and read-only permissions; Dependabot config (SR-020, SR-021)
+- [x] 4.3 Root `README.md` and `CLAUDE.md`
+- [x] 4.4 Automated end-to-end smoke script `scripts/smoke.mjs` run against all parts together (locally and in a CI `compose-smoke` job): upload a photo, order, log in, download for the arm, check security headers (AC-001, AC-005, AC-007, AC-018, AC-031, AC-065); `docker-compose.dev.yml` publishing the database on 127.0.0.1
+- [x] 4.5 Verify from a clean clone and archive the change
