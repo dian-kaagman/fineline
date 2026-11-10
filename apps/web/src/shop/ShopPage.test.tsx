@@ -1,6 +1,6 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DRAWING_SVG, OAK, WALNUT, confirmation, drawingPreview, jpeg } from "../test/fixtures";
 import { apiError, deferred, json, mockApi, networkFailure } from "../test/http";
 import { expectNoAxeViolations, mockImageSize, mockReducedMotion, renderApp } from "../test/render";
@@ -91,7 +91,7 @@ describe("C1 Photo", () => {
     expect(input).toHaveAttribute("type", "file");
     expect(input).toHaveAttribute(
       "accept",
-      "image/jpeg,image/png,image/heic,.jpg,.jpeg,.png,.heic",
+      "image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif",
     );
     expect(input).toHaveAccessibleDescription(
       "JPEG, PNG or HEIC, up to 15 MB, at least 800 pixels on the shortest side.",
@@ -263,20 +263,63 @@ describe("C2 Making your drawing", () => {
     expect(status).toBeEmptyDOMElement();
   });
 
-  it("UX-008 Cancel aborts the request and shows the stopped notice", async () => {
-    const api = shopApi().on("POST", "/api/v1/drawings", () => new Promise<Response>(() => {}));
+  it("UX-008 Cancel aborts the request, ignores a late answer and shows the stopped notice", async () => {
+    // The fake server still answers after the abort, as if the answer was already on its way.
+    const late = deferred<Response>();
+    const api = mockApi({ honourAbort: false })
+      .on("GET", "/api/v1/frames", json(200, { frames: [OAK] }))
+      .on("POST", "/api/v1/drawings", () => late.promise);
     const { user } = renderApp("/");
     await choosePhoto(user);
     await screen.findByRole("heading", { level: 1, name: "Making your drawing" });
+    const signal = api.callsTo("POST", "/api/v1/drawings")[0]!.signal!;
+    expect(signal.aborted).toBe(false);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(signal.aborted).toBe(true);
+    await act(async () => late.resolve(json(201, drawingPreview())));
+    expect(h1()).toHaveTextContent("Turn your photo into a fineline drawing");
+    expect(screen.queryByRole("img", { name: /Preview/ })).not.toBeInTheDocument();
     expect(
       await screen.findByText("Stopped. Choose a photo when you're ready."),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Stopped. Choose a photo when you're ready.").closest(".notice"),
     ).toHaveFocus();
-    expect(api.calls.at(-1)?.method).toBe("POST");
     expect(screen.getByLabelText("Choose a photo")).toBeInTheDocument();
+  });
+
+  it("AC-009 a second photo chosen during the pre-check wins; the first is never sent", async () => {
+    // The browser takes a while to read the first photo's size.
+    let release: (() => void) | null = null;
+    class SlowImage {
+      naturalWidth = 1600;
+      naturalHeight = 1200;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        release = () => this.onload?.();
+      }
+    }
+    globalThis.Image = SlowImage as unknown as typeof Image;
+    const api = shopApi().on(
+      "POST",
+      "/api/v1/drawings",
+      json(201, drawingPreview({ svg: DRAWING_SVG.replace("M10 10", "M99 99") })),
+    );
+    const { user } = renderApp("/");
+    await choosePhoto(user, jpeg("first.jpg"));
+    const releaseFirst = release!;
+    await choosePhoto(user, jpeg("second.jpg"));
+    await act(async () => release!());
+    await screen.findByRole("heading", { level: 1, name: "Your drawing is ready" });
+    await act(async () => releaseFirst());
+    const sent = api
+      .callsTo("POST", "/api/v1/drawings")
+      .map((call) => (call.body as FormData).get("photo") as File);
+    expect(sent.map((file) => file.name)).toEqual(["second.jpg"]);
+    expect(
+      decodeURIComponent(screen.getByRole("img", { name: /Preview/ }).getAttribute("src")!),
+    ).toContain("M99 99");
   });
 
   it("UX-010 shows the static pen illustration instead of the animation under reduced motion", async () => {
@@ -287,6 +330,9 @@ describe("C2 Making your drawing", () => {
     await screen.findByRole("heading", { level: 1, name: "Making your drawing" });
     expect(screen.getByTestId("pen-static")).toBeInTheDocument();
     expect(screen.queryByTestId("pen-animated")).not.toBeInTheDocument();
+    // The native indeterminate bar animates itself, so a static bar replaces it.
+    const progress = screen.getByRole("progressbar", { name: "Progress of your drawing" });
+    expect(progress.tagName).not.toBe("PROGRESS");
   });
 
   it("UX-010 animates the pen when motion is fine", async () => {
@@ -543,11 +589,32 @@ describe("C5 Details", () => {
     await user.click(within(summary).getByRole("link", { name: "Enter your city." }));
     expect(screen.getByLabelText("City")).toHaveFocus();
     await expectNoAxeViolations();
+  });
 
-    // A fixed field loses its error when it loses focus.
+  it("UX-006 errors and the summary stay until the next submit, so one tap on Place order after fixing them sends", async () => {
+    const api = shopApi().on("POST", "/api/v1/orders", json(201, confirmation()));
+    const { user } = renderApp("/");
+    await reachDetails(user, api);
+    await fillDetails(user);
+    await user.clear(screen.getByLabelText("City"));
+    await user.clear(screen.getByLabelText("Email"));
+    await user.type(screen.getByLabelText("Email"), "anna@example");
+    await user.click(placeOrderButton());
+    const summary = screen.getByRole("heading", { name: "There is a problem" }).parentElement!;
+    const before = summary.innerHTML;
+
+    await user.clear(screen.getByLabelText("Email"));
+    await user.type(screen.getByLabelText("Email"), "anna@example.nl");
     await user.type(screen.getByLabelText("City"), "Utrecht");
-    await user.tab();
-    expect(screen.getByLabelText("City")).not.toHaveAttribute("aria-invalid");
+    fireEvent.blur(screen.getByLabelText("City"));
+    // Nothing above the button moved: the summary and inline errors are as they were.
+    expect(summary).toBeInTheDocument();
+    expect(summary.innerHTML).toBe(before);
+    expect(screen.getByLabelText("City")).toHaveAttribute("aria-invalid", "true");
+
+    await user.click(placeOrderButton());
+    await screen.findByRole("heading", { level: 1, name: "Thank you, your order is placed" });
+    expect(api.callsTo("POST", "/api/v1/orders")).toHaveLength(1);
   });
 
   it("AC-016 asks to agree to the photo terms and sends nothing", async () => {
@@ -706,6 +773,65 @@ describe("C5 Details", () => {
     expect(api.callsTo("POST", "/api/v1/orders").at(-1)!.body).toMatchObject({
       frameId: WALNUT.id,
     });
+  });
+
+  it("AC-020 treats 422 frame_not_found like a sold-out frame", async () => {
+    const api = shopApi().on("POST", "/api/v1/orders", apiError(422, "frame_not_found"));
+    const { user } = renderApp("/");
+    await reachDetails(user, api);
+    await fillDetails(user);
+    api.on("GET", "/api/v1/frames", json(200, { frames: [WALNUT] }));
+    await user.click(placeOrderButton());
+    expect(await screen.findByText(/This frame just sold out: Oak A4\./)).toBeInTheDocument();
+    expect(h1()).toHaveTextContent("Choose a frame");
+  });
+
+  it("AC-020 UX-026 a sold-out answer that arrives after the customer went back still lands on the frames", async () => {
+    const pending = deferred<Response>();
+    const api = shopApi().on("POST", "/api/v1/orders", () => pending.promise);
+    const { user } = renderApp("/");
+    await reachDetails(user, api);
+    await fillDetails(user);
+    await user.click(placeOrderButton());
+    await user.click(screen.getByRole("button", { name: "Back to frames" }));
+    await screen.findByRole("heading", { level: 1, name: "Choose a frame" });
+    api.on("GET", "/api/v1/frames", json(200, { frames: [WALNUT] }));
+    await act(async () => pending.resolve(apiError(409, "frame_sold_out")));
+    expect(await screen.findByText(/This frame just sold out: Oak A4\./)).toBeInTheDocument();
+    expect(h1()).toHaveTextContent("Choose a frame");
+    expect(await screen.findByRole("radio", { name: WALNUT_NAME })).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: WALNUT_NAME }));
+    await user.click(screen.getByRole("button", { name: "Continue to your details" }));
+    expect(await screen.findByLabelText("Name")).toHaveValue("Anna de Vries");
+  });
+
+  it("AC-058 BR-018 a retry after expiresAt is still sent, so the API can answer the original order", async () => {
+    const api = shopApi().on("POST", "/api/v1/orders", networkFailure(), json(200, confirmation()));
+    const { user } = renderApp("/");
+    await reachDetails(user, api);
+    await fillDetails(user);
+    await user.click(placeOrderButton());
+    await screen.findByText(/We couldn't reach our shop/);
+    // The 24 hours pass before the customer tries again.
+    const later = Date.parse(drawingPreview().expiresAt) + 2 * 60 * 60 * 1000;
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    await user.click(placeOrderButton());
+    await screen.findByRole("heading", { level: 1, name: "Thank you, your order is placed" });
+    expect(api.callsTo("POST", "/api/v1/orders")).toHaveLength(2);
+  });
+
+  it("BR-012 reloads the frames on entering step 3, so the price shown is the current one", async () => {
+    const api = shopApi();
+    const { user } = renderApp("/");
+    await reachPreview(user, api);
+    api.on("GET", "/api/v1/frames", json(200, { frames: [{ ...OAK, priceCents: 5495 }] }));
+    await user.click(screen.getByRole("button", { name: "Choose a frame" }));
+    expect(
+      await screen.findByRole("radio", { name: "Oak A4, 210 x 297 mm, €54.95" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Oak A4, 210 x 297 mm, €54.95" }));
+    await user.click(screen.getByRole("button", { name: "Continue to your details" }));
+    expect(await screen.findByText("Total: €54.95 (including VAT)")).toBeInTheDocument();
   });
 
   it("AC-022 AC-010 a preview the API no longer has shows the expired state, and the details stay", async () => {

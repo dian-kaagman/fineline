@@ -43,10 +43,10 @@ h3 {
   }
 }
 
-/* Headings receive focus after navigation (UX-003) but are not controls. */
-h1[tabindex="-1"]:focus:not(:focus-visible),
-h2[tabindex="-1"]:focus:not(:focus-visible),
-main[tabindex="-1"]:focus:not(:focus-visible) {
+/* Headings and main receive focus after navigation (UX-003) but are not controls: no ring. */
+h1[tabindex="-1"]:focus,
+h2[tabindex="-1"]:focus,
+main[tabindex="-1"]:focus {
   outline-color: transparent;
 }
 
@@ -101,6 +101,9 @@ table {
 }
 
 .skip-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
   position: absolute;
   left: var(--space-4);
   top: var(--space-2);

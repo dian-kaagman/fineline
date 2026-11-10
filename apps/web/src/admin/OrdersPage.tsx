@@ -96,14 +96,23 @@ export function OrdersPage() {
     try {
       const file = await api.downloadDrawingForArm(order.id, order.orderNumber);
       saveBlob(file.blob, file.filename);
-      if (order.status === "received") setRowStatus(order.id, "drawing");
-      announce(downloadedMessage(order.orderNumber, order.status));
     } catch (error) {
-      if (!isSessionEnd(error))
+      if (!isSessionEnd(error)) {
         setActionError(t("a2.error.download", { orderNumber: order.orderNumber }));
-    } finally {
+      }
       setBusy(order.id, null);
+      return;
     }
+    // The row shows the status the API reports now, not a guess (the order may have changed elsewhere).
+    let after: OrderStatus | null = null;
+    try {
+      after = (await api.getOrder(order.id)).status;
+      setRowStatus(order.id, after);
+    } catch (error) {
+      if (isSessionEnd(error)) return;
+    }
+    announce(downloadedMessage(order.orderNumber, order.status, after));
+    setBusy(order.id, null);
   }
 
   /** Returns true when the status changed. */

@@ -83,7 +83,7 @@ Status action labels (buttons):
 | c1.tips.face | one or two faces, close up | |
 | c1.tips.background | a plain background | |
 | c1.requirements | JPEG, PNG or HEIC, up to 15 MB, at least 800 pixels on the shortest side. | Linked to the file input |
-| c1.privacy | We only use your photo to make your drawing. If you don't order, we delete it within 24 hours. | |
+| c1.privacy | We only use your photo to make your drawing. If you don't order, we delete it 24 hours after you upload it. | |
 | c1.choose | Choose a photo | Primary button (label of the file input) |
 | c1.tryAgain | Try again | Resends the same photo |
 | c1.chooseAnother | Choose another photo | |
@@ -179,7 +179,7 @@ C1 errors (danger notice, `role="alert"`, focused):
 | c5.city.label | City | |
 | c5.terms.label | I agree that my photo is used only to make my drawing | Checkbox label, word for word from AC-016 |
 | c5.terms.more | Read the photo terms | `<summary>` of the disclosure |
-| c5.terms.body | We use your photo only to make your drawing. It is processed on our own server and never shared with other services. Only Fineline can see your photo and drawing. We delete your photo 30 days after your order is shipped or cancelled, and keep the drawing so you can order it again. If you don't place an order, we delete your photo and preview within 24 hours. Only upload photos you have the right to use, and ask the people in the photo if they agree. | **(owner to confirm)** |
+| c5.terms.body | We use your photo only to make your drawing. It is processed on our own server and never shared with other services. Only Fineline can see your photo and drawing. We delete your photo 30 days after your order is shipped or cancelled, and keep the drawing so you can order it again. If you don't place an order, we delete your photo and preview 24 hours after you upload them. Only upload photos you have the right to use, and ask the people in the photo if they agree. | **(owner to confirm)** |
 | c5.total | Total: {price} (including VAT) | |
 | c5.withdrawal | This drawing is made just for you, so the 14-day right of withdrawal does not apply. | Info notice directly above the button (AC-017, BR-015) **(owner to confirm, Q-10)** |
 | c5.payment | You don't pay online. We'll email you how to pay. | **(owner to confirm, Q-8)** |
@@ -438,7 +438,8 @@ Frame form errors (A5 and A6):
 | a6.stock.add | Add to stock | Sends `delta = +amount` |
 | a6.stock.remove | Remove from stock | Sends `delta = -amount` |
 | a6.error.amount.invalid | Enter a whole number from 1 to 10000. | |
-| a6.error.stockNegative | Stock can't go below zero. There are {stock} in stock, so you can remove at most {stock}. | `stock_negative` (409), AC-044 |
+| a6.error.stockNegative.one | Stock can't go below zero. There is 1 in stock, so you can remove at most 1. | `stock_negative` (409), AC-044 |
+| a6.error.stockNegative.other | Stock can't go below zero. There are {stock} in stock, so you can remove at most {stock}. | Also for 0: "There are 0 in stock, so you can remove at most 0." |
 | a6.done.stock | Stock is now {stock}. | Add " {frameName} is offered to customers again." when it went from 0 to more (AC-043); " {frameName} is no longer offered to customers." when it went to 0 |
 | a6.notFound | Frame not found | |
 | a6.error.load | We couldn't load this frame. Check the connection and try again. | |
@@ -454,8 +455,29 @@ Frame form errors (A5 and A6):
 | a7.leadTime.hint | Working days are Monday to Friday; public holidays count as working days. The new lead time applies to orders placed from now on. Existing orders keep their delivery date. | |
 | a7.save | Save lead time | |
 | a7.saving | Saving... | |
-| a7.done.one | Lead time saved: 1 working day. It applies to orders placed from now on. | AC-045 |
-| a7.done.other | Lead time saved: {days} working days. It applies to orders placed from now on. | AC-045 |
+| a7.done.one | Lead time saved: 1 working day. It applies to orders placed from now on; existing orders keep their delivery date. | AC-045 (same wording as flows.md F17) |
+| a7.done.other | Lead time saved: {days} working days. It applies to orders placed from now on; existing orders keep their delivery date. | AC-045 |
 | a7.error.leadTime | The lead time must be a whole number from 1 to 60. | AC-046 (0, 2.5, 61, empty) |
 | a7.drawingArea | Drawing area: {width} x {height} mm (set in the deployment configuration) | From `GET /admin/settings` (read-only) |
 | a7.error.load | We couldn't load the settings. Check the connection and try again. | |
+
+## Keys added by the web build (accepted in the UX review)
+
+The builder added these keys to `apps/web/src/i18n/en.ts` for states and values the tables above didn't spell out. They are accepted as written and are part of the catalogue now.
+
+| Key | Text | Notes |
+|---|---|---|
+| wait.unknown | a few minutes | `{wait}` when a 429 has no usable `Retry-After` |
+| transition.drawing / drawn / ready_to_ship / shipped / cancelled / received | moved back to Drawing / marked drawn / marked ready to ship / marked shipped / cancelled / moved back to Received | The `{targetAction}` values of `admin.error.invalidTransition` |
+| shop.steps.completed | completed | Visually hidden suffix of done steps (UX-017) |
+| c6.price.value | {price} (including VAT) | Value of `c6.price.label` |
+| a2.titleFiltered | {filterName} orders - Fineline admin | Title when a filter other than Open is chosen |
+| a2.empty.all | No orders yet. New orders appear here as soon as customers place them. | Empty state of the All filter |
+| a2.done.downloadedAgain | {orderNumber} downloaded again. Status unchanged: {status}. | From the `a2.done.downloaded` note |
+| a3.titleLoading / a3.headingLoading | Order - Fineline admin / Order | While the order loads |
+| a3.drawing.strokeCount.one / .other | 1 stroke / {count} strokes | Value of `a3.drawing.strokes` |
+| a3.drawing.lengthValue | {metres} m | Value of `a3.drawing.length` |
+| a5.photo.previewAlt | Photo you chose | Alt of the local preview thumbnail on A5 |
+| a6.titleLoading / a6.headingLoading | Frame - Fineline admin / Frame | While the frame loads |
+| a6.done.stockOffered | Stock is now {stock}. {frameName} is offered to customers again. | From the `a6.done.stock` note (AC-043) |
+| a6.done.stockNotOffered | Stock is now {stock}. {frameName} is no longer offered to customers. | From the `a6.done.stock` note |

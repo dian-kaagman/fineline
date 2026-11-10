@@ -27,7 +27,7 @@ Shop: <http://localhost:5173/>. Admin: <http://localhost:5173/admin> (credential
 | --------------------------------- | --------------------------------------------------------------------------------------- |
 | `npm run dev`                     | Vite dev server with the `/api` proxy                                                   |
 | `npm run build`                   | Type-check (`tsc -b`) and build into `dist/`; needs `VITE_CONTACT_EMAIL`                |
-| `npm run preview`                 | Serve the built `dist/` locally (no API proxy)                                          |
+| `npm run preview`                 | Serve the built `dist/` locally, with the same `/api` proxy as `dev`                    |
 | `npm run lint`                    | ESLint (typescript-eslint, react, react-hooks, jsx-a11y; `react/no-danger` is an error) |
 | `npm run format` / `format:check` | Prettier write / check                                                                  |
 | `npm run typecheck`               | `tsc -b` for app, tests and config                                                      |
@@ -78,6 +78,7 @@ To add a screen: add a route in `App.tsx`, call the API through `src/api/*`, tak
 - SPA with history fallback to `index.html` (`no-cache`); hashed `/assets/` cached for a year, missing assets 404.
 - `/api/` proxied to `http://api:3000` with `X-Forwarded-For` **overwritten** by the client address (SR-017) and a 60 s read timeout (above the API's 30 s worker timeout).
 - Body limits (SR-001): 16 MB for `POST /api/v1/drawings`, 6 MB for the admin frame photo routes, 1 MB elsewhere; nginx's own 413 is answered as JSON in the API's error shape.
+- Upload protection (SR-001/SR-021 amended): at most 3 concurrent uploads per client address on the photo routes (`limit_conn`; more get 429 `rate_limited` as JSON with `Retry-After: 60`), and `client_body_timeout 15s`, so stalled uploads can't fill the `/tmp` tmpfs where nginx buffers bodies. Size that tmpfs for the expected concurrent uploads (16 MB each).
 - SR-019 headers on every response (`always`): CSP, `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `X-Frame-Options: DENY`; `server_tokens off`.
 
 ```sh

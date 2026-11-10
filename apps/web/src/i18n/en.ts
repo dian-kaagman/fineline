@@ -75,7 +75,7 @@ export const en = {
   "c1.tips.background": "a plain background",
   "c1.requirements": "JPEG, PNG or HEIC, up to 15 MB, at least 800 pixels on the shortest side.",
   "c1.privacy":
-    "We only use your photo to make your drawing. If you don't order, we delete it within 24 hours.",
+    "We only use your photo to make your drawing. If you don't order, we delete it 24 hours after you upload it.",
   "c1.choose": "Choose a photo",
   "c1.tryAgain": "Try again",
   "c1.chooseAnother": "Choose another photo",
@@ -162,7 +162,7 @@ export const en = {
   "c5.terms.label": "I agree that my photo is used only to make my drawing",
   "c5.terms.more": "Read the photo terms",
   "c5.terms.body":
-    "We use your photo only to make your drawing. It is processed on our own server and never shared with other services. Only Fineline can see your photo and drawing. We delete your photo 30 days after your order is shipped or cancelled, and keep the drawing so you can order it again. If you don't place an order, we delete your photo and preview within 24 hours. Only upload photos you have the right to use, and ask the people in the photo if they agree.",
+    "We use your photo only to make your drawing. It is processed on our own server and never shared with other services. Only Fineline can see your photo and drawing. We delete your photo 30 days after your order is shipped or cancelled, and keep the drawing so you can order it again. If you don't place an order, we delete your photo and preview 24 hours after you upload them. Only upload photos you have the right to use, and ask the people in the photo if they agree.",
   "c5.total": "Total: {price} (including VAT)",
   "c5.withdrawal":
     "This drawing is made just for you, so the 14-day right of withdrawal does not apply.",
@@ -341,6 +341,9 @@ export const en = {
   "a3.error.load": "We couldn't load this order. Check the connection and try again.",
   "a3.done.downloaded": "{orderNumber} downloaded. Status: Drawing.", // same text as a2.done.downloaded
   "a3.done.status": "{orderNumber} is now {status}.",
+  // web addition: the file was saved but reading the order's new status failed
+  "a3.done.downloadedNoRefresh":
+    "{orderNumber} downloaded. Its status couldn't be refreshed - reload the page to see it.",
   "a3.done.cancelled": "{orderNumber} is cancelled. {frameName} is back in stock.",
 
   // A4 Frames
@@ -418,7 +421,9 @@ export const en = {
   "a6.stock.add": "Add to stock",
   "a6.stock.remove": "Remove from stock",
   "a6.error.amount.invalid": "Enter a whole number from 1 to 10000.",
-  "a6.error.stockNegative":
+  "a6.error.stockNegative.one":
+    "Stock can't go below zero. There is 1 in stock, so you can remove at most 1.",
+  "a6.error.stockNegative.other":
     "Stock can't go below zero. There are {stock} in stock, so you can remove at most {stock}.",
   "a6.done.stock": "Stock is now {stock}.",
   "a6.done.stockOffered": "Stock is now {stock}. {frameName} is offered to customers again.", // from the a6.done.stock note (AC-043)
@@ -435,8 +440,10 @@ export const en = {
     "Working days are Monday to Friday; public holidays count as working days. The new lead time applies to orders placed from now on. Existing orders keep their delivery date.",
   "a7.save": "Save lead time",
   "a7.saving": "Saving...",
-  "a7.done.one": "Lead time saved: 1 working day. It applies to orders placed from now on.",
-  "a7.done.other": "Lead time saved: {days} working days. It applies to orders placed from now on.",
+  "a7.done.one":
+    "Lead time saved: 1 working day. It applies to orders placed from now on; existing orders keep their delivery date.",
+  "a7.done.other":
+    "Lead time saved: {days} working days. It applies to orders placed from now on; existing orders keep their delivery date.",
   "a7.error.leadTime": "The lead time must be a whole number from 1 to 60.",
   "a7.drawingArea": "Drawing area: {width} x {height} mm (set in the deployment configuration)",
   "a7.error.load": "We couldn't load the settings. Check the connection and try again.",

@@ -92,9 +92,11 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+/* The primary button comes first in the DOM: on top on phones, on the right from bp.sm, so the
+   Tab order follows the reading order (UX-001). */
 .actions {
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: var(--space-3);
 }
 
@@ -104,8 +106,8 @@
 
 @media (min-width: 30em) {
   .actions {
-    flex-direction: row;
-    justify-content: flex-end;
+    flex-direction: row-reverse;
+    justify-content: flex-start;
     flex-wrap: wrap;
   }
 

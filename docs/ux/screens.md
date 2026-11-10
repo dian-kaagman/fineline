@@ -83,7 +83,7 @@ Cut in the plan review. When the session ends, the admin tool redirects to A1 wi
 - **Purpose:** look at the drawing and decide (BR-005, BR-017)
 - **Content:** h1 [c3.heading] "Your drawing is ready"; the drawing sheet: `<img src="data:image/svg+xml;...">` built from the returned markup (never inlined), `alt` [c3.preview.alt] "Preview of your line drawing, made from your photo", on `color.surface` with `shadow.paper`, with the aspect ratio of the returned `widthMm / heightMm` (the drawing area, portrait; a landscape photo becomes a band across the middle of it, so the sheet is never cropped to the strokes); caption [c3.size] "Drawn in black fineliner by our pen robot, sized to fit A4 paper." (no measurements: the strokes may cover less than the area); notice [c3.whatYouSee] "What you see is exactly what we'll draw."; hint [c3.notQuiteRight].
 - **Actions:** **Choose a frame** (primary) -> C4; **Try another photo** (secondary) -> F2. The image can be pinch-zoomed (UX-030); no "View full size" dialog in this slice.
-- **Layout:** phone: sheet full width, buttons below. From `bp.lg`: sheet left (max 60 %), text and buttons right.
+- **Layout:** one column at every width (the shop column is only `content-max-shop` wide, so two columns would squeeze the drawing): heading, sheet (full column width), text, buttons.
 - **States:**
   - success: as above
   - expired (F7): sheet replaced by a warning notice [c3.expired] "This preview is no longer available. Please upload your photo again." + **Upload your photo again** (primary, opens the file chooser) - focus to the notice. Step indicator stays at step 2
@@ -197,7 +197,7 @@ Cut in the plan review. When the session ends, the admin tool redirects to A1 wi
   - **Delivery date** (h2): "Tuesday 17 November 2026" and **Change delivery date** (hidden for Shipped/Cancelled). Editing: `<input type="date">` with `min` = `orderDate`, **Save delivery date** (primary), **Cancel** (text button).
   - **Drawing** (h2): the drawing on a white sheet as an `<img>` (`alt` [a3.drawing.alt] "Drawing for order FL-2026-0042"); the web app fetches the side-effect-free `GET .../drawing.svg` and shows the text as a `data:image/svg+xml` URL, like C3 (viewing never changes the status, AC-030); facts: size "180 x 267 mm", strokes "812 strokes", total line length "14.3 m"
   - **Photo** (h2): the customer's photo, `<img src="/api/v1/admin/orders/{id}/photo">` (`alt` [a3.photo.alt] "Customer's photo for order FL-2026-0042"), max 20rem wide
-  - **Customer** (h2): name, email (as `mailto:` link), delivery address (3 lines)
+  - **Customer** (h2): name, email (plain text, not a link: no `href` is built from customer data, SR-016), delivery address (3 lines)
   - **Order** (h2): order date "Friday 6 November 2026" (`orderDate`), frame (link to A6), price "€49.95"
 - **Layout:** below `bp.lg` one column in the order above; from `bp.lg` two columns: left Drawing and Photo, right the rest.
 - **States:**
@@ -260,7 +260,7 @@ Cut in the plan review. When the session ends, the admin tool redirects to A1 wi
   - loading: heading "Frame" + skeletons
   - not found: [a6.notFound] "Frame not found" + link **Frames**
   - error loading: [a6.error.load] + **Try again**
-  - per section: invalid (inline errors; summary only in Details when there are 2+ errors), busy (that section's button), saved (success notice in that section [a6.done.*], announced; focus stays on the button), refused: `stock_negative` -> [a6.error.stockNegative] on **Number of frames** (AC-044), `validation_failed` details -> the frame form errors as in A5
+  - per section: invalid (inline errors; summary only in Details when there are 2+ errors), busy (that section's button), saved (success notice [a6.done.*] in the admin status region at the top of main, announced; the section itself shows the new value, e.g. the stock number; focus stays on the button), refused: `stock_negative` -> [a6.error.stockNegative] on **Number of frames** (AC-044), `validation_failed` details -> the frame form errors as in A5
   - no changes on **Save changes**: info [a6.noChanges] "Nothing changed."
   - disabled: never
 - **Accessibility:** UX-005, UX-006, UX-021, UX-031; each section is a `<section>` with its h2 as `aria-labelledby`.

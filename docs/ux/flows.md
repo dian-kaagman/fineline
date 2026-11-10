@@ -55,7 +55,7 @@ The customer flow is one page at `/` with four steps and a confirmation: **1 Pho
 **Entry:** **Place order** with missing/invalid fields, from the browser check or a 400 `validation_failed` / `country_not_supported` / `photo_terms_not_accepted`
 1. Nothing is ordered. An error summary "There is a problem" appears at the top of the form listing each problem as a link to its field; focus moves to the summary (UX-006).
 2. Each field with a problem shows its message under the label, linked with `aria-describedby`, and `aria-invalid="true"`. AC-014: "Enter a valid email address, like name@example.com", "Enter your city", "Enter a Dutch postal code, like 1234 AB".
-3. Everything entered stays in the form (AC-014). Fixed fields clear their error when they lose focus; the summary updates on the next **Place order**.
+3. Everything entered stays in the form (AC-014). Errors and the summary stay until the next **Place order**, which checks everything again (no layout shift when a field loses focus, UX-006).
 - The country choice offers only Netherlands and Belgium, so `country_not_supported` (AC-015) can only come from a tampered request; it still maps to "We deliver to the Netherlands and Belgium only." on the Country field.
 - Not ticking the photo terms (AC-016): "Tick the box to agree to the photo terms. We can only make your drawing with your agreement."
 

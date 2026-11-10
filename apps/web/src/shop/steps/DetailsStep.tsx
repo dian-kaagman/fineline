@@ -12,7 +12,6 @@ import {
   COUNTRIES,
   DETAILS_FIELDS,
   FIELD_IDS,
-  checkField,
   validateDetails,
   type CustomerDetails,
   type DetailsErrors,
@@ -35,6 +34,10 @@ interface DetailsStepProps {
 }
 
 /** C5 Details (step 4 of 4): who and where, photo terms, withdrawal notice, Place order (AC-014..AC-017). */
+/**
+ * Errors and the summary stay until the next Place order, which checks everything again: nothing
+ * moves when a field loses focus, so a tap right after a correction lands (UX-006 (e)).
+ */
 export function DetailsStep({
   drawing,
   frame,
@@ -55,17 +58,6 @@ export function DetailsStep({
 
   function set<K extends DetailsField>(field: K, value: CustomerDetails[K]) {
     onChange({ ...details, [field]: value });
-  }
-
-  /** A corrected field loses its error when it loses focus; new errors only appear on submit (UX-006). */
-  function clearIfFixed(field: DetailsField, next: CustomerDetails = details) {
-    if (errors[field] && checkField(field, next) === null) {
-      setErrors((current) => {
-        const rest = { ...current };
-        delete rest[field];
-        return rest;
-      });
-    }
   }
 
   function showFieldErrors(fields: DetailsErrors, other: string[]) {
@@ -162,7 +154,6 @@ export function DetailsStep({
           value={details.name}
           error={errors.name}
           onChange={(event) => set("name", event.target.value)}
-          onBlur={() => clearIfFixed("name")}
         />
         <TextField
           id={FIELD_IDS.email}
@@ -175,7 +166,6 @@ export function DetailsStep({
           value={details.email}
           error={errors.email}
           onChange={(event) => set("email", event.target.value)}
-          onBlur={() => clearIfFixed("email")}
         />
 
         <fieldset className="fieldset" aria-describedby="address-hint">
@@ -200,11 +190,7 @@ export function DetailsStep({
                     value={country}
                     autoComplete="country"
                     checked={details.country === country}
-                    onChange={() => {
-                      const next = { ...details, country };
-                      onChange(next);
-                      clearIfFixed("country", next);
-                    }}
+                    onChange={() => onChange({ ...details, country })}
                   />
                   <label htmlFor={`details-country-${country}`}>{t(`c5.country.${country}`)}</label>
                 </div>
@@ -220,7 +206,6 @@ export function DetailsStep({
               value={details.street}
               error={errors.street}
               onChange={(event) => set("street", event.target.value)}
-              onBlur={() => clearIfFixed("street")}
             />
             <TextField
               id={FIELD_IDS.houseNumber}
@@ -230,7 +215,6 @@ export function DetailsStep({
               value={details.houseNumber}
               error={errors.houseNumber}
               onChange={(event) => set("houseNumber", event.target.value)}
-              onBlur={() => clearIfFixed("houseNumber")}
             />
           </div>
           <div className="field-row field-row--city">
@@ -242,7 +226,6 @@ export function DetailsStep({
               value={details.postalCode}
               error={errors.postalCode}
               onChange={(event) => set("postalCode", event.target.value)}
-              onBlur={() => clearIfFixed("postalCode")}
             />
             <TextField
               id={FIELD_IDS.city}
@@ -251,7 +234,6 @@ export function DetailsStep({
               value={details.city}
               error={errors.city}
               onChange={(event) => set("city", event.target.value)}
-              onBlur={() => clearIfFixed("city")}
             />
           </div>
         </fieldset>
@@ -272,11 +254,9 @@ export function DetailsStep({
                 Boolean(errors.acceptedPhotoTerms),
                 false,
               )}
-              onChange={(event) => {
-                const next = { ...details, acceptedPhotoTerms: event.target.checked };
-                onChange(next);
-                clearIfFixed("acceptedPhotoTerms", next);
-              }}
+              onChange={(event) =>
+                onChange({ ...details, acceptedPhotoTerms: event.target.checked })
+              }
             />
             <label htmlFor={FIELD_IDS.acceptedPhotoTerms}>{t("c5.terms.label")}</label>
           </div>
@@ -299,11 +279,11 @@ export function DetailsStep({
         )}
 
         <div className="actions">
-          <Button variant="secondary" onClick={onBack}>
-            {t("c5.back")}
-          </Button>
           <Button type="submit" variant="primary" busy={busy} busyLabel={t("c5.submitting")}>
             {t("c5.submit")}
+          </Button>
+          <Button variant="secondary" onClick={onBack}>
+            {t("c5.back")}
           </Button>
         </div>
       </form>

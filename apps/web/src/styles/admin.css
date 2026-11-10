@@ -83,10 +83,13 @@
   list-style: none;
 }
 
-.filter-nav a {
+.filter-nav a,
+.order-number-link,
+.back-link {
   display: inline-flex;
   align-items: center;
   min-height: var(--target-min-dense);
+  min-width: var(--target-min-dense);
 }
 
 .filter-nav a[aria-current="page"] {
@@ -96,6 +99,8 @@
 
 /* ---------- Tables: scroll in their own region below bp.lg (UX-013, UX-019) ---------- */
 .table-region {
+  /* Positioned, so visually hidden row text is placed inside the scroll region, not the page (UX-013). */
+  position: relative;
   overflow-x: auto;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border-subtle);

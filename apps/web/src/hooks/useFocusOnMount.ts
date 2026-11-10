@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useLayoutEffect, type RefObject } from "react";
 import { useLocation } from "react-router";
 
 /**
@@ -8,7 +8,7 @@ import { useLocation } from "react-router";
  */
 export function useFocusHeadingOnNavigation(ref: RefObject<HTMLElement | null>): void {
   const { key } = useLocation();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (key !== "default") ref.current?.focus();
   }, [key, ref]);
 }

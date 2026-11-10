@@ -151,7 +151,8 @@ describe("A2 Orders", () => {
         "POST",
         `/api/v1/admin/orders/${FL42.id}/drawing-download`,
         svgResponse(svg, "FL-2026-0042.svg"),
-      );
+      )
+      .on("GET", `/api/v1/admin/orders/${FL42.id}`, json(200, orderDetail({ status: "drawing" })));
     const clicks: string[] = [];
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
       this: HTMLAnchorElement,
@@ -177,6 +178,26 @@ describe("A2 Orders", () => {
     );
     // The row stays although it no longer matches the Received filter.
     expect(rows()).toHaveLength(1);
+    click.mockRestore();
+  });
+
+  it("AC-031 AC-036 after a download the row shows the status the API reports, not a guess", async () => {
+    // The order was cancelled in another tab; the SVG still downloads (allowed in any status).
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    admin()
+      .on("GET", "/api/v1/admin/orders?status=open", json(200, { orders: [FL42] }))
+      .on("POST", /drawing-download$/, svgResponse("<svg/>"))
+      .on(
+        "GET",
+        `/api/v1/admin/orders/${FL42.id}`,
+        json(200, orderDetail({ status: "cancelled" })),
+      );
+    const { user } = renderApp("/admin/orders");
+    await user.click(await screen.findByRole("button", { name: "Download SVG for FL-2026-0042" }));
+    await waitFor(() => expect(rows()[0]).toHaveTextContent("Cancelled"));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "FL-2026-0042 downloaded again. Status unchanged: Cancelled.",
+    );
     click.mockRestore();
   });
 
@@ -248,6 +269,30 @@ describe("A2 Orders", () => {
     expect(api.callsTo("POST", /\/status$/)[0]!.body).toEqual({ status: "shipped" });
     expect(within(rows()[0]!).queryByRole("button")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "FL-2026-0042" })).toHaveFocus();
+  });
+
+  it("AC-034 a refused Mark shipped closes the dialog, names the current status and reloads the list", async () => {
+    const ready = orderSummary({ status: "ready_to_ship" });
+    const api = admin()
+      .on("GET", "/api/v1/admin/orders?status=open", json(200, { orders: [ready] }))
+      .on("POST", /\/status$/, apiError(409, "invalid_transition"))
+      .on(
+        "GET",
+        `/api/v1/admin/orders/${ready.id}`,
+        json(200, orderDetail({ status: "cancelled" })),
+      );
+    const { user } = renderApp("/admin/orders");
+    await user.click(await screen.findByRole("button", { name: "Mark shipped for FL-2026-0042" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Mark shipped" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "FL-2026-0042 is Cancelled now, so it can't be marked shipped. The order has been reloaded.",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.callsTo("GET", "/api/v1/admin/orders?status=open")).toHaveLength(2),
+    );
   });
 
   it("AC-034 a refused move names the current status and reloads the list", async () => {

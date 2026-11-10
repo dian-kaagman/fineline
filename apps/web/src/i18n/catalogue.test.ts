@@ -39,7 +39,19 @@ function contentRows(): Row[] {
     const first = keyParts[0] ?? "";
     if (!/^[a-z0-9]+(\.[A-Za-z0-9_]+)+$/.test(first)) continue;
     const prefix = first.slice(0, first.lastIndexOf(".") + 1);
-    const keys = [first, ...keyParts.slice(1).map((part) => `${prefix}${part}`)];
+    // Later parts are a last segment ("status"), a sibling suffix (".other") or a full key.
+    const keys = [
+      first,
+      ...keyParts
+        .slice(1)
+        .map((part) =>
+          part.startsWith(".")
+            ? `${prefix.slice(0, -1)}${part}`
+            : part.includes(".")
+              ? part
+              : `${prefix}${part}`,
+        ),
+    ];
     const texts = textColumn >= 0 ? (cells[textColumn] ?? "").split(" / ") : [];
     keys.forEach((key, index) => {
       const text =
@@ -67,6 +79,11 @@ function cleanText(text: string): string {
     .replace(/\s*\((AC|UX|BR)-\d+(, (AC|UX|BR)-\d+)*\)$/g, "")
     .trim();
 }
+
+/**
+ * Texts changed in the web app ahead of docs/ux/content.md, with the reason. Remove an entry once
+ * content.md has the same text (the test then checks it again).
+ */
 
 describe("UX-014 message catalogue", () => {
   const rows = contentRows();

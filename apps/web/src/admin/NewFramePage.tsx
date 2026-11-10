@@ -121,7 +121,9 @@ export function NewFramePage() {
   return (
     <div className="stack">
       <p>
-        <Link to="/admin/frames">{t("a5.back")}</Link>
+        <Link className="back-link" to="/admin/frames">
+          {t("a5.back")}
+        </Link>
       </p>
       <h1 ref={headingRef} tabIndex={-1}>
         {t("a5.heading")}

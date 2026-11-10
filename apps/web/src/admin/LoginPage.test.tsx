@@ -130,6 +130,31 @@ describe("route guard and session end", () => {
     expect(api.callsTo("GET", /\/admin\/orders/)).toHaveLength(0);
   });
 
+  it("UX-023 a failed session check (network, 5xx) is a load error with Try again, not an ended session", async () => {
+    const api = mockApi()
+      .on(
+        "GET",
+        "/api/v1/admin/session",
+        networkFailure(),
+        apiError(502, "http_502"),
+        json(200, { username: "owner" }),
+      )
+      .on("GET", "/api/v1/admin/orders?status=open", json(200, { orders: [] }));
+    const { user } = renderApp("/admin/orders");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't reach the server. Check the connection and try again.",
+    );
+    expect(currentLocation.value?.pathname).toBe("/admin/orders");
+    expect(screen.queryByText(/Your session has ended/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Something went wrong on the server.",
+    );
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Orders" })).toBeInTheDocument();
+    expect(api.callsTo("GET", "/api/v1/admin/session")).toHaveLength(3);
+  });
+
   it("UX-023 a 401 on Save lead time goes to the login page and back to the same page after logging in", async () => {
     const api = mockApi()
       .on("GET", "/api/v1/admin/session", json(200, { username: "owner" }))

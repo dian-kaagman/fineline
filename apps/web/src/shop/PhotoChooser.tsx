@@ -1,6 +1,7 @@
 import type { ChangeEvent, Ref } from "react";
 
-export const PHOTO_ACCEPT = "image/jpeg,image/png,image/heic,.jpg,.jpeg,.png,.heic";
+export const PHOTO_ACCEPT =
+  "image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif";
 
 interface PhotoChooserProps {
   id: string;

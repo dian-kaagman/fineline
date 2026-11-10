@@ -39,7 +39,7 @@ describe("SR-007 SR-016 SR-019 safe rendering", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("SR-019 index.html loads nothing from another site and has no inline script or style", () => {
+  it("AC-065 SR-019 index.html loads nothing from another site and has no inline script or style", () => {
     const html = readFileSync(join(__dirname, "../index.html"), "utf8");
     expect(html).not.toMatch(/https?:\/\//);
     expect(html).not.toMatch(/<style/);
@@ -49,6 +49,23 @@ describe("SR-007 SR-016 SR-019 safe rendering", () => {
     expect(html).toContain(
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     );
+  });
+
+  it("AC-065 SR-019 the app's code and styles reference no other site (no CDN, fonts or analytics)", () => {
+    const styles = readdirSync(join(__dirname, "styles")).map((name) =>
+      readFileSync(join(__dirname, "styles", name), "utf8"),
+    );
+    const offenders = [
+      ...files.map(({ path, text }) => ({ path, text })),
+      ...styles.map((text, i) => ({ path: `styles#${i}`, text })),
+    ]
+      .filter(({ text }) =>
+        /(https?:)?\/\/[a-z0-9-]+\.[a-z]/i.test(
+          text.replace(/http:\/\/www\.w3\.org\/2000\/svg/g, ""),
+        ),
+      )
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
   });
 
   it("UX-012 component CSS uses tokens only: no colours, px font sizes or outline: none outside tokens.css", () => {

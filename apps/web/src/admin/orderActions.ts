@@ -44,9 +44,17 @@ export function invalidTransitionMessage(
   });
 }
 
-/** The status-region text after a download for the arm (AC-031, AC-032). */
-export function downloadedMessage(orderNumber: string, statusBefore: OrderStatus): string {
-  return statusBefore === "received"
+/**
+ * The status-region text after a download for the arm (AC-031, AC-032), from the status the API
+ * reports afterwards; null when that status couldn't be read.
+ */
+export function downloadedMessage(
+  orderNumber: string,
+  statusBefore: OrderStatus,
+  statusAfter: OrderStatus | null,
+): string {
+  if (statusAfter === null) return t("a3.done.downloadedNoRefresh", { orderNumber });
+  return statusBefore === "received" && statusAfter === "drawing"
     ? t("a2.done.downloaded", { orderNumber })
-    : t("a2.done.downloadedAgain", { orderNumber, status: t(`status.${statusBefore}`) });
+    : t("a2.done.downloadedAgain", { orderNumber, status: t(`status.${statusAfter}`) });
 }

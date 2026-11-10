@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ApiError, isAbortError } from "../api/client";
 import {
@@ -94,7 +94,7 @@ export function ShopPage() {
 
   // Focus: a requested target (an error notice, the file chooser) wins; otherwise the new step's h1
   // after every step change, but not on the first page load (UX-003).
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewChanged = previousViewRef.current !== null && previousViewRef.current !== view;
     previousViewRef.current = view;
     const pending = pendingFocusRef.current;
@@ -110,6 +110,17 @@ export function ShopPage() {
     if (viewChanged) document.getElementById(HEADING_ID)?.focus();
   }, [view, focusTick]);
 
+  // Where the customer is now, for answers that arrive after they moved on (e.g. pressed Back).
+  const stepRef = useRef<Step>(step);
+  useLayoutEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+
+  // Prices and stock change: reload the frames every time step 3 is entered (BR-012).
+  useEffect(() => {
+    if (view === "frame") loadFrames("refresh");
+  }, [view]);
+
   // Abort a running conversion when the page goes away.
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -118,9 +129,12 @@ export function ShopPage() {
     setFocusTick((tick) => tick + 1);
   }
 
-  function loadFrames() {
+  /** "replace" shows the loading state; "refresh" keeps a loaded list visible until the new one arrives. */
+  function loadFrames(mode: "replace" | "refresh") {
     const request = ++framesRequestRef.current;
-    setFrames({ status: "loading" });
+    setFrames((current) =>
+      mode === "refresh" && current.status === "loaded" ? current : { status: "loading" },
+    );
     listFrames()
       .then((list) => {
         if (request !== framesRequestRef.current) return;
@@ -130,7 +144,11 @@ export function ShopPage() {
         );
       })
       .catch(() => {
-        if (request === framesRequestRef.current) setFrames({ status: "error" });
+        if (request !== framesRequestRef.current) return;
+        // A failed refresh keeps the list the customer already sees; the API checks at ordering.
+        setFrames((current) =>
+          mode === "refresh" && current.status === "loaded" ? current : { status: "error" },
+        );
       });
   }
 
@@ -140,9 +158,17 @@ export function ShopPage() {
   }
 
   async function makeDrawing(photo: File) {
+    // One drawing at a time: the latest choice wins and any earlier one is stopped.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const isCurrent = () => abortRef.current === controller;
+
     if (step !== "photo") navigate("/", { state: { step: "photo" } });
     const problem = await precheckPhoto(photo);
+    if (!isCurrent()) return;
     if (problem) {
+      abortRef.current = null;
       showPhotoError({ message: t(problem), retryable: false });
       return;
     }
@@ -150,27 +176,28 @@ export function ShopPage() {
     lastPhotoRef.current = photo;
     const thumbnailUrl =
       typeof URL.createObjectURL === "function" ? URL.createObjectURL(photo) : null;
-    const controller = new AbortController();
-    abortRef.current = controller;
     setPhotoStatus({ kind: "idle" });
     setConverting({ thumbnailUrl });
     setAnnouncement(t("c2.working"));
-    if (frames.status !== "loaded") loadFrames(); // so step 3 is instant
+    if (frames.status !== "loaded") loadFrames("replace"); // so step 3 is quick
 
     try {
       const preview = await createDrawing(photo, controller.signal);
+      if (!isCurrent()) return; // cancelled or replaced while the answer was on its way
       setDrawing(preview);
       setExpired(false);
       setConverting(null);
       navigate("/", { state: { step: "preview" } });
     } catch (error) {
-      if (isAbortError(error)) return;
+      if (isAbortError(error) || !isCurrent()) return;
       setConverting(null);
       showPhotoError(photoErrorFor(error));
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
       if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
-      setAnnouncement("");
+      if (isCurrent()) {
+        abortRef.current = null;
+        setAnnouncement("");
+      }
     }
   }
 
@@ -178,6 +205,7 @@ export function ShopPage() {
     abortRef.current?.abort();
     abortRef.current = null;
     setConverting(null);
+    setAnnouncement("");
     setPhotoStatus({ kind: "cancelled" });
     requestFocus(STEP_NOTICE_ID);
   }
@@ -204,7 +232,6 @@ export function ShopPage() {
 
   function chooseFrame() {
     if (drawing && hasExpired(drawing)) return markExpired();
-    if (frames.status === "error") loadFrames();
     navigate("/", { state: { step: "frame" } });
   }
 
@@ -216,10 +243,8 @@ export function ShopPage() {
 
   async function submitOrder(): Promise<PlaceOrderOutcome> {
     if (!drawing || !selectedFrame) return { kind: "left" };
-    if (hasExpired(drawing)) {
-      markExpired();
-      return { kind: "left" };
-    }
+    // No expiry check here: after a lost confirmation the API still answers the replay (200) once
+    // the preview has expired, and answers 404 drawing_not_found otherwise (BR-018).
     try {
       const result = await placeOrder(toOrderRequest(details, drawing, selectedFrame.id));
       // 201 or a 200 replay: show exactly what the API returned (AC-018, AC-058).
@@ -235,9 +260,15 @@ export function ShopPage() {
         if (error.code === "frame_sold_out" || error.code === "frame_not_found") {
           setSoldOutFrameName(selectedFrame.name);
           setSelectedFrameId(null);
-          loadFrames();
           requestFocus(STEP_NOTICE_ID);
-          navigate(-1);
+          // Step 3, wherever the customer went while waiting (UX-026: details and preview are kept).
+          if (stepRef.current === "frame") {
+            loadFrames("replace");
+          } else {
+            setFrames({ status: "loading" });
+            if (stepRef.current === "details") navigate(-1);
+            else navigate("/", { state: { step: "frame" } });
+          }
           return { kind: "left" };
         }
         if (error.code === "drawing_not_found") {
@@ -336,7 +367,7 @@ export function ShopPage() {
           onSelect={setSelectedFrameId}
           onContinue={continueToDetails}
           onBack={() => navigate(-1)}
-          onRetryLoad={loadFrames}
+          onRetryLoad={() => loadFrames("replace")}
         />
       )}
       {view === "details" && drawing && selectedFrame && (

@@ -86,7 +86,7 @@ All sizes in `rem` so they follow the browser's text size (UX-013). Line heights
 |---|---|---|
 | bp.sm | 30em (480 px) | Frame cards 2 per row |
 | bp.md | 48em (768 px) | h1 32 px; admin form fields in 2 columns |
-| bp.lg | 64em (1024 px) | Order detail in 2 columns (drawing left, facts and actions right); customer preview next to its actions. Below it, admin tables scroll inside their own region (UX-013) |
+| bp.lg | 64em (1024 px) | Order detail in 2 columns (drawing left, facts and actions right). Below it, admin tables scroll inside their own region (UX-013). The customer flow stays one column |
 | bp.xl | 80em (1280 px) | Wider admin margins only |
 
 Media queries can't read custom properties; use the literal `em` values (listed in `tokens.css`). The design must work from 320 CSS px wide (UX-013).

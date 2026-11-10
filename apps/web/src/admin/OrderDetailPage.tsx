@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import type { OrderDetail, OrderStatus } from "../api/admin";
 import { ApiError } from "../api/client";
@@ -82,18 +82,31 @@ export function OrderDetailPage() {
     order.state.error instanceof ApiError &&
     order.state.error.status === 404;
 
-  if (notFound) {
+  /**
+   * Every state renders the same back link and h1 in the same place, so the heading React focused
+   * on arrival stays the same element when the order loads (UX-003).
+   */
+  function page(heading: string, status: OrderStatus | null, body: ReactNode) {
     return (
       <div className="stack">
-        <h1 ref={headingRef} tabIndex={-1}>
-          {t("a3.notFound.heading")}
-        </h1>
-        <p>{t("a3.notFound.body")}</p>
         <p>
-          <Link to="/admin/orders">{t("a3.back")}</Link>
+          <Link className="back-link" to={notFound ? "/admin/orders" : backTo}>
+            {t("a3.back")}
+          </Link>
         </p>
+        <div className="title-row">
+          <h1 ref={headingRef} tabIndex={-1}>
+            {heading}
+          </h1>
+          {status && <StatusBadge status={status} />}
+        </div>
+        {body}
       </div>
     );
+  }
+
+  if (notFound) {
+    return page(t("a3.notFound.heading"), null, <p>{t("a3.notFound.body")}</p>);
   }
 
   async function refusal(current: OrderDetail, target: OrderStatus) {
@@ -114,18 +127,25 @@ export function OrderDetailPage() {
     try {
       const file = await api.downloadDrawingForArm(current.id, current.orderNumber);
       saveBlob(file.blob, file.filename);
-      announce(downloadedMessage(current.orderNumber, current.status));
-      if (current.status === "received") {
-        const fresh = await api.getOrder(current.id);
-        order.update(() => fresh);
-      }
-      setFocusNextStep((value) => value + 1);
     } catch (error) {
-      if (!isSessionEnd(error))
+      if (!isSessionEnd(error)) {
         setNextStepError(t("a2.error.download", { orderNumber: current.orderNumber }));
-    } finally {
+      }
       setBusy(null);
+      return;
     }
+    // The file is saved; now show the status the API has (Drawing for a received order, AC-031).
+    let after: OrderDetail | null = null;
+    try {
+      const fresh = await api.getOrder(current.id);
+      after = fresh;
+      order.update(() => fresh);
+    } catch (error) {
+      if (isSessionEnd(error)) return;
+    }
+    announce(downloadedMessage(current.orderNumber, current.status, after?.status ?? null));
+    setBusy(null);
+    setFocusNextStep((value) => value + 1);
   }
 
   async function changeStatus(current: OrderDetail, target: OrderStatus, inDialog: boolean) {
@@ -164,33 +184,27 @@ export function OrderDetailPage() {
   }
 
   if (!loaded) {
-    return (
-      <div className="stack">
-        <p>
-          <Link to={backTo}>{t("a3.back")}</Link>
-        </p>
-        <h1 ref={headingRef} tabIndex={-1}>
-          {t("a3.headingLoading")}
-        </h1>
-        {order.state.status === "error" && !isSessionEnd(order.state.error) ? (
-          <Notice
-            tone="danger"
-            role="alert"
-            actions={
-              <Button variant="secondary" onClick={order.reload}>
-                {t("admin.retry")}
-              </Button>
-            }
-          >
-            <p>{t("a3.error.load")}</p>
-          </Notice>
-        ) : (
-          <>
-            <Skeleton className="skeleton--block" />
-            <Skeleton className="skeleton--block" />
-          </>
-        )}
-      </div>
+    return page(
+      t("a3.headingLoading"),
+      null,
+      order.state.status === "error" && !isSessionEnd(order.state.error) ? (
+        <Notice
+          tone="danger"
+          role="alert"
+          actions={
+            <Button variant="secondary" onClick={order.reload}>
+              {t("admin.retry")}
+            </Button>
+          }
+        >
+          <p>{t("a3.error.load")}</p>
+        </Notice>
+      ) : (
+        <>
+          <Skeleton className="skeleton--block" />
+          <Skeleton className="skeleton--block" />
+        </>
+      ),
     );
   }
 
@@ -215,18 +229,10 @@ export function OrderDetailPage() {
     </Button>
   );
 
-  return (
-    <div className="stack">
-      <p>
-        <Link to={backTo}>{t("a3.back")}</Link>
-      </p>
-      <div className="title-row">
-        <h1 ref={headingRef} tabIndex={-1}>
-          {t("a3.heading", { orderNumber: current.orderNumber })}
-        </h1>
-        <StatusBadge status={current.status} />
-      </div>
-
+  return page(
+    t("a3.heading", { orderNumber: current.orderNumber }),
+    current.status,
+    <>
       <div className="order-layout">
         <div className="order-layout__media stack">
           <section className="stack" aria-labelledby="drawing-heading">
@@ -412,7 +418,7 @@ export function OrderDetailPage() {
         onConfirm={() => void changeStatus(current, "shipped", true)}
         onCancel={() => setDialog(null)}
       />
-    </div>
+    </>,
   );
 }
 

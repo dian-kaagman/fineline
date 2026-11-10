@@ -45,7 +45,12 @@ export function MakingStep({ thumbnailUrl, onCancel }: MakingStepProps) {
         </svg>
       </div>
       <p>{t("c2.working")}</p>
-      <progress className="progress" aria-label={t("c2.progressLabel")} />
+      {reducedMotion ? (
+        // The browser animates an indeterminate <progress> itself; this static bar doesn't move (UX-010).
+        <div className="progress-static" role="progressbar" aria-label={t("c2.progressLabel")} />
+      ) : (
+        <progress className="progress" aria-label={t("c2.progressLabel")} />
+      )}
       <div className="actions">
         <Button variant="secondary" onClick={onCancel}>
           {t("c2.cancel")}

@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { SETTINGS, adminFrame, jpeg } from "../test/fixtures";
-import { apiError, json, mockApi } from "../test/http";
+import { apiError, deferred, json, mockApi } from "../test/http";
 import { expectNoAxeViolations, renderApp } from "../test/render";
 
 const OAK = adminFrame();
@@ -288,6 +288,36 @@ describe("A6 Edit frame", () => {
     await waitFor(() => expect(amount).toHaveFocus());
     expect(screen.getByText("In stock: 2")).toBeInTheDocument();
     expect(api.callsTo("POST", /stock-adjustments$/)[0]!.body).toEqual({ delta: -3 });
+  });
+
+  it("AC-044 says 'There is 1 in stock' for a single frame", async () => {
+    const one = adminFrame({ stock: 1 });
+    admin()
+      .on("GET", FRAME_URL, json(200, one))
+      .on("POST", `${FRAME_URL}/stock-adjustments`, apiError(409, "stock_negative"));
+    const { user } = renderApp(`/admin/frames/${OAK.id}`);
+    await screen.findByText("In stock: 1");
+    await user.type(screen.getByLabelText("Number of frames"), "2");
+    await user.click(screen.getByRole("button", { name: "Remove from stock" }));
+    expect(
+      await screen.findByText(
+        "Stock can't go below zero. There is 1 in stock, so you can remove at most 1.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("UX-003 focus stays on the h1 when the frame loads after arriving from the list", async () => {
+    const pending = deferred<Response>();
+    admin()
+      .on("GET", "/api/v1/admin/frames", json(200, { frames: [OAK] }))
+      .on("GET", FRAME_URL, () => pending.promise);
+    const { user } = renderApp("/admin/frames");
+    await user.click(await screen.findByRole("link", { name: "Oak A4" }));
+    const heading = await screen.findByRole("heading", { level: 1, name: "Frame" });
+    expect(heading).toHaveFocus();
+    await act(async () => pending.resolve(json(200, OAK)));
+    expect(await screen.findByRole("heading", { level: 1, name: "Oak A4" })).toBe(heading);
+    expect(heading).toHaveFocus();
   });
 
   it("UX-031 refuses a stock amount that isn't a whole number from 1 to 10000", async () => {

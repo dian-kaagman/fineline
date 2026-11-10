@@ -137,14 +137,14 @@ export function FrameStep({
       )}
 
       <div className="actions">
-        <Button variant="secondary" onClick={onBack}>
-          {t("c4.back")}
-        </Button>
         {!empty && (
           <Button variant="primary" onClick={handleContinue}>
             {t("c4.continue")}
           </Button>
         )}
+        <Button variant="secondary" onClick={onBack}>
+          {t("c4.back")}
+        </Button>
       </div>
     </div>
   );

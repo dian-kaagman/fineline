@@ -1,7 +1,7 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DRAWING_SVG, orderDetail } from "../test/fixtures";
-import { apiError, json, mockApi, networkFailure, svgResponse } from "../test/http";
+import { apiError, deferred, json, mockApi, networkFailure, svgResponse } from "../test/http";
 import { expectNoAxeViolations, renderApp } from "../test/render";
 
 const ID = orderDetail().id;
@@ -27,7 +27,7 @@ describe("A3 Order detail", () => {
     const api = admin();
     renderApp(`/admin/orders/${ID}`);
     await openOrder();
-    expect(document.title).toBe("Order FL-2026-0042 - Fineline admin");
+    await waitFor(() => expect(document.title).toBe("Order FL-2026-0042 - Fineline admin"));
     expect(screen.getAllByText("Received").length).toBeGreaterThan(0);
     expect(within(section("Order")).getByText("Friday 6 November 2026")).toBeInTheDocument();
     expect(
@@ -135,6 +135,71 @@ describe("A3 Order detail", () => {
     ).toBeInTheDocument();
     expect(api.callsTo("POST", `${ORDER_URL}/status`)[0]!.body).toEqual({ status: "cancelled" });
     expect(screen.getByRole("heading", { level: 2, name: "Next step" })).toHaveFocus();
+  });
+
+  it("UX-003 focus stays on the h1 when the order loads after arriving from the list", async () => {
+    const pending = deferred<Response>();
+    mockApi()
+      .on("GET", "/api/v1/admin/session", json(200, { username: "owner" }))
+      .on("GET", "/api/v1/admin/orders?status=open", json(200, { orders: [orderDetail()] }))
+      .on("GET", ORDER_URL, () => pending.promise)
+      .on("GET", `${ORDER_URL}/drawing.svg`, svgResponse(DRAWING_SVG));
+    const { user } = renderApp("/admin/orders");
+    await user.click(await screen.findByRole("link", { name: "FL-2026-0042" }));
+    const heading = await screen.findByRole("heading", { level: 1, name: "Order" });
+    expect(heading).toHaveFocus();
+    await act(async () => pending.resolve(json(200, orderDetail())));
+    await openOrder();
+    expect(screen.getByRole("heading", { level: 1 })).toBe(heading);
+    expect(heading).toHaveFocus();
+  });
+
+  it("AC-031 says the file downloaded when only the status refresh afterwards fails", async () => {
+    const api = admin().on("POST", `${ORDER_URL}/drawing-download`, svgResponse(DRAWING_SVG));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const { user } = renderApp(`/admin/orders/${ID}`);
+    await openOrder();
+    api.on("GET", ORDER_URL, networkFailure());
+    await user.click(screen.getByRole("button", { name: "Download SVG" }));
+    expect(
+      await screen.findByText(
+        "FL-2026-0042 downloaded. Its status couldn't be refreshed - reload the page to see it.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't be downloaded/)).not.toBeInTheDocument();
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+
+  it("BR-009 offers a forward step only when the API lists it in allowedNextStatuses", async () => {
+    admin(orderDetail({ status: "drawn", allowedNextStatuses: [] }));
+    renderApp(`/admin/orders/${ID}`);
+    await openOrder();
+    expect(screen.queryByRole("button", { name: "Mark ready to ship" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download SVG again" })).toBeInTheDocument();
+  });
+
+  it("AC-036 order_closed on a date change says so and reloads the order", async () => {
+    const api = admin().on("PATCH", ORDER_URL, apiError(409, "order_closed"));
+    const { user } = renderApp(`/admin/orders/${ID}`);
+    await openOrder();
+    await user.click(screen.getByRole("button", { name: "Change delivery date" }));
+    fireEvent.change(screen.getByLabelText("New delivery date"), {
+      target: { value: "2026-11-20" },
+    });
+    api.on("GET", ORDER_URL, json(200, orderDetail({ status: "shipped" })));
+    await user.click(screen.getByRole("button", { name: "Save delivery date" }));
+    await waitFor(() => expect(api.callsTo("GET", ORDER_URL)).toHaveLength(2));
+    expect(
+      await screen.findAllByText(
+        "The delivery date of a shipped or cancelled order can't be changed.",
+      ),
+    ).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Change delivery date" })).not.toBeInTheDocument();
+    expect(
+      within(section("Delivery date")).getByText("Tuesday 17 November 2026"),
+    ).toBeInTheDocument();
   });
 
   it("AC-036 shipped and cancelled orders offer no status actions and no date change", async () => {

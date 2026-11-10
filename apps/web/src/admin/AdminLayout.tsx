@@ -7,8 +7,14 @@ import { SkipLink } from "../components/ui/SkipLink";
 import { t } from "../i18n/t";
 import { loginPathFor } from "../lib/safeNext";
 import { AdminContext, type AdminContextValue } from "./AdminContext";
+import { adminErrorMessage } from "./adminErrors";
 
-type SessionState = "checking" | "valid" | "ended";
+type SessionState =
+  | { kind: "checking" }
+  | { kind: "valid" }
+  | { kind: "ended" }
+  /** The check got no usable answer (network, 5xx): not the same as an ended session. */
+  | { kind: "unknown"; message: string };
 
 /**
  * X2 Admin layout and route guard: checks the session before showing any admin data (AC-026),
@@ -17,14 +23,15 @@ type SessionState = "checking" | "valid" | "ended";
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [session, setSession] = useState<SessionState>("checking");
+  const [session, setSession] = useState<SessionState>({ kind: "checking" });
+  const [checkTick, setCheckTick] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
   // Any admin call answering 401 ends the session here; the render below redirects (UX-023).
   const context = useMemo<AdminContextValue>(
-    () => ({ api: createAdminApi(() => setSession("ended")), announce: setAnnouncement }),
+    () => ({ api: createAdminApi(() => setSession({ kind: "ended" })), announce: setAnnouncement }),
     [],
   );
 
@@ -32,16 +39,16 @@ export function AdminLayout() {
     let active = true;
     getSession()
       .then((current) => {
-        if (active) setSession(current ? "valid" : "ended");
+        if (active) setSession(current ? { kind: "valid" } : { kind: "ended" });
       })
-      .catch(() => {
-        // Without an answer we can't show admin data; the login page explains network problems.
-        if (active) setSession("ended");
+      .catch((error: unknown) => {
+        // Only a 401 ends the session (getSession returns null then); anything else is a load error.
+        if (active) setSession({ kind: "unknown", message: adminErrorMessage(error) });
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [checkTick]);
 
   // Results belong to the page they happened on (UX-021: they stay until the next navigation).
   const [shownFor, setShownFor] = useState(location.pathname);
@@ -51,7 +58,7 @@ export function AdminLayout() {
     setLogoutError(null);
   }
 
-  if (session === "ended") {
+  if (session.kind === "ended") {
     return <Navigate to={loginPathFor(`${location.pathname}${location.search}`)} replace />;
   }
 
@@ -106,7 +113,7 @@ export function AdminLayout() {
           aria-live="polite"
           className={announcement ? "status-region" : "visually-hidden"}
         >
-          {session === "checking" ? (
+          {session.kind === "checking" ? (
             <span className="visually-hidden">{t("admin.loading")}</span>
           ) : (
             announcement && (
@@ -121,7 +128,26 @@ export function AdminLayout() {
             <p>{logoutError}</p>
           </Notice>
         )}
-        {session === "valid" && (
+        {session.kind === "unknown" && (
+          <Notice
+            tone="danger"
+            role="alert"
+            actions={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSession({ kind: "checking" });
+                  setCheckTick((tick) => tick + 1);
+                }}
+              >
+                {t("admin.retry")}
+              </Button>
+            }
+          >
+            <p>{session.message}</p>
+          </Notice>
+        )}
+        {session.kind === "valid" && (
           <AdminContext.Provider value={context}>
             <Outlet />
           </AdminContext.Provider>

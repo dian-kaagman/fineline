@@ -33,7 +33,7 @@ describe("A7 Settings", () => {
     await user.click(screen.getByRole("button", { name: "Save lead time" }));
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Lead time saved: 10 working days. It applies to orders placed from now on.",
+        "Lead time saved: 10 working days. It applies to orders placed from now on; existing orders keep their delivery date.",
       ),
     );
     const put = api.callsTo("PUT", "/api/v1/admin/settings")[0]!;

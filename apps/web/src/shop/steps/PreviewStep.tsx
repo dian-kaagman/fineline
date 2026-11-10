@@ -61,11 +61,11 @@ export function PreviewStep({ drawing, onContinue, onTryAnother, onPhoto }: Prev
         </Notice>
         <p>{t("c3.notQuiteRight")}</p>
         <div className="actions">
-          <Button variant="secondary" onClick={onTryAnother}>
-            {t("c3.tryAnother")}
-          </Button>
           <Button variant="primary" onClick={onContinue}>
             {t("c3.continue")}
+          </Button>
+          <Button variant="secondary" onClick={onTryAnother}>
+            {t("c3.tryAnother")}
           </Button>
         </div>
         <p className="hint">{t("c3.expiryNote", expiry)}</p>

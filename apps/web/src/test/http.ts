@@ -7,6 +7,7 @@ export interface RecordedCall {
   path: string;
   headers: Headers;
   body: unknown;
+  signal: AbortSignal | undefined;
 }
 
 type Answer = Response | ((call: RecordedCall) => Response | Promise<Response>);
@@ -53,7 +54,11 @@ export function networkFailure(): Answer {
   return () => Promise.reject(new TypeError("Failed to fetch"));
 }
 
-export function mockApi() {
+/**
+ * `honourAbort: false` makes the fake server answer even after the request was aborted, like an
+ * answer already on its way, to prove the app ignores late answers itself.
+ */
+export function mockApi({ honourAbort = true }: { honourAbort?: boolean } = {}) {
   const routes: Route[] = [];
   const calls: RecordedCall[] = [];
 
@@ -63,10 +68,16 @@ export function mockApi() {
     const path = `${url.pathname}${url.search}`;
     let body: unknown = init.body;
     if (typeof init.body === "string") body = JSON.parse(init.body);
-    const call: RecordedCall = { method, path, headers: new Headers(init.headers), body };
+    const call: RecordedCall = {
+      method,
+      path,
+      headers: new Headers(init.headers),
+      body,
+      signal: init.signal ?? undefined,
+    };
     calls.push(call);
 
-    if (init.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    if (honourAbort && init.signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     const route = [...routes]
       .reverse()
@@ -82,7 +93,7 @@ export function mockApi() {
     const response = typeof answer === "function" ? answer(call) : answer.clone();
 
     // Honour aborts while the answer is pending (Cancel on C2).
-    if (init.signal) {
+    if (honourAbort && init.signal) {
       const signal = init.signal;
       return Promise.race([
         Promise.resolve(response),

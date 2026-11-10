@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import type { AdminFrame, FrameUpdate } from "../api/admin";
 import { ApiError } from "../api/client";
@@ -10,7 +10,7 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { useAsyncData } from "../hooks/useAsyncData";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useFocusHeadingOnNavigation } from "../hooks/useFocusOnMount";
-import { t } from "../i18n/t";
+import { t, tPlural } from "../i18n/t";
 import { centsToEuroInput, parseWholeNumber } from "../lib/parse";
 import { useAdmin } from "./AdminContext";
 import { adminErrorMessage, isSessionEnd } from "./adminErrors";
@@ -55,67 +55,62 @@ export function EditFramePage() {
         }
       : null;
 
-  if (
+  const notFound =
     frame.state.status === "error" &&
     frame.state.error instanceof ApiError &&
-    frame.state.error.status === 404
-  ) {
-    return (
-      <div className="stack">
-        <h1 ref={headingRef} tabIndex={-1}>
-          {t("a6.notFound")}
-        </h1>
-        <p>
-          <Link to="/admin/frames">{t("a6.back")}</Link>
-        </p>
-      </div>
+    frame.state.error.status === 404;
+
+  let heading: string;
+  let body: ReactNode;
+  if (notFound) {
+    heading = t("a6.notFound");
+    body = null;
+  } else if (!loaded) {
+    heading = t("a6.headingLoading");
+    body =
+      frame.state.status === "error" && !isSessionEnd(frame.state.error) ? (
+        <Notice
+          tone="danger"
+          role="alert"
+          actions={
+            <Button variant="secondary" onClick={frame.reload}>
+              {t("admin.retry")}
+            </Button>
+          }
+        >
+          <p>{t("a6.error.load")}</p>
+        </Notice>
+      ) : (
+        <>
+          <Skeleton className="skeleton--block" />
+          <Skeleton className="skeleton--block" />
+        </>
+      );
+  } else {
+    const replace = (updated: AdminFrame) => frame.update(() => updated);
+    heading = loaded.name;
+    body = (
+      <>
+        <DetailsSection frame={loaded} area={area} onSaved={replace} />
+        <PhotoSection frame={loaded} onSaved={replace} />
+        <StockSection frame={loaded} onSaved={replace} reload={() => api.getFrame(loaded.id)} />
+      </>
     );
   }
 
-  if (!loaded) {
-    return (
-      <div className="stack">
-        <p>
-          <Link to="/admin/frames">{t("a6.back")}</Link>
-        </p>
-        <h1 ref={headingRef} tabIndex={-1}>
-          {t("a6.headingLoading")}
-        </h1>
-        {frame.state.status === "error" && !isSessionEnd(frame.state.error) ? (
-          <Notice
-            tone="danger"
-            role="alert"
-            actions={
-              <Button variant="secondary" onClick={frame.reload}>
-                {t("admin.retry")}
-              </Button>
-            }
-          >
-            <p>{t("a6.error.load")}</p>
-          </Notice>
-        ) : (
-          <>
-            <Skeleton className="skeleton--block" />
-            <Skeleton className="skeleton--block" />
-          </>
-        )}
-      </div>
-    );
-  }
-
-  const replace = (updated: AdminFrame) => frame.update(() => updated);
-
+  // One h1 element in one place for every state, so the focus it got on arrival survives the
+  // load (UX-003).
   return (
     <div className="stack">
       <p>
-        <Link to="/admin/frames">{t("a6.back")}</Link>
+        <Link className="back-link" to="/admin/frames">
+          {t("a6.back")}
+        </Link>
       </p>
       <h1 ref={headingRef} tabIndex={-1}>
-        {loaded.name}
+        {heading}
       </h1>
-      <DetailsSection frame={loaded} area={area} onSaved={replace} />
-      <PhotoSection frame={loaded} onSaved={replace} />
-      <StockSection frame={loaded} onSaved={replace} reload={() => api.getFrame(loaded.id)} />
+      {body}
     </div>
   );
 }
@@ -391,7 +386,7 @@ function StockSection({
         } catch {
           // Keep the stock this page knows.
         }
-        setError(t("a6.error.stockNegative", { stock }));
+        setError(tPlural("a6.error.stockNegative", stock, { stock }));
         inputRef.current?.focus();
       } else if (caught instanceof ApiError && caught.code === "validation_failed") {
         setError(t("a6.error.amount.invalid"));
