@@ -1,0 +1,185 @@
+/* Admin tool (X2, A1-A7). Designed for a laptop, usable down to 320 px. */
+
+.admin {
+  min-height: 100vh;
+}
+
+.admin-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+
+.admin-header__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  max-width: var(--content-max-admin);
+  min-height: var(--header-height);
+  margin-inline: auto;
+  padding: var(--space-2) var(--space-4);
+}
+
+.wordmark--admin {
+  min-height: var(--target-min-dense);
+  font-size: var(--font-size-md);
+}
+
+.admin-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.admin-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min-dense);
+}
+
+.admin-nav a[aria-current="page"] {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+.admin-header__logout {
+  margin-left: auto;
+}
+
+.admin-main {
+  max-width: var(--content-max-admin);
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-4) var(--space-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+@media (min-width: 80em) {
+  .admin-main {
+    padding-inline: var(--space-6);
+  }
+}
+
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+}
+
+.filter-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.filter-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min-dense);
+}
+
+.filter-nav a[aria-current="page"] {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+/* ---------- Tables: scroll in their own region below bp.lg (UX-013, UX-019) ---------- */
+.table-region {
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.table {
+  width: 100%;
+  min-width: 48rem;
+}
+
+@media (min-width: 64em) {
+  .table {
+    min-width: 0;
+  }
+}
+
+.table caption {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  color: var(--color-text-muted);
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  vertical-align: middle;
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+
+.table th {
+  background: var(--color-surface-sunken);
+  font-weight: var(--font-weight-semibold);
+}
+
+.order-number-link {
+  font-family: var(--font-family-mono);
+}
+
+/* ---------- Order detail ---------- */
+.order-layout {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.order-layout__media .sheet {
+  max-width: 30rem;
+}
+
+.order-photo {
+  max-width: 20rem;
+  height: auto;
+}
+
+@media (min-width: 64em) {
+  .order-layout {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.form--admin {
+  max-width: 40rem;
+}
+
+@media (min-width: 48em) {
+  .form--admin .field-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---------- Login ---------- */
+.login__main {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+}
+
+.login__card {
+  width: 100%;
+  max-width: 24rem;
+}
+
+.status-region {
+  display: block;
+}

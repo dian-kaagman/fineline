@@ -1,0 +1,504 @@
+/* Base components (docs/ux/design-tokens.md "Component patterns"). */
+
+/* ---------- Buttons ---------- */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: var(--space-3) var(--space-5);
+  border: var(--border-width-strong) solid transparent;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-easing),
+    color var(--motion-duration-fast) var(--motion-easing);
+}
+
+.button--primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.button--primary:hover {
+  background: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+.button--secondary {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.button--secondary:hover {
+  color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.button--danger {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+}
+
+.button--danger:hover {
+  background: var(--color-danger-hover);
+}
+
+.button--text {
+  background: transparent;
+  color: var(--color-link);
+  text-decoration: underline;
+  padding-inline: var(--space-2);
+  font-weight: var(--font-weight-regular);
+  align-self: flex-start;
+}
+
+.button--dense {
+  min-height: var(--target-min-dense);
+  min-width: 0;
+  padding: var(--space-1) var(--space-3);
+}
+
+.button[aria-disabled="true"] {
+  cursor: progress;
+}
+
+.spinner {
+  width: var(--space-4);
+  height: var(--space-4);
+  border: var(--border-width-strong) solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-pill);
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The file chooser: the native input is visually hidden but focusable, the label shows focus (UX-028). */
+.file-button:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-3);
+}
+
+.actions > .button {
+  width: 100%;
+}
+
+@media (min-width: 30em) {
+  .actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .actions > .button {
+    width: auto;
+  }
+}
+
+.actions--start {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.actions--start > .button {
+  width: auto;
+}
+
+/* ---------- Icons ---------- */
+.icon {
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Notices ---------- */
+.notice {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-left: var(--space-1) solid currentColor;
+  border-radius: var(--radius-md);
+}
+
+.notice__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.notice--info {
+  background: var(--color-info-subtle);
+  color: var(--color-info);
+}
+
+.notice--success {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+.notice--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.notice--warning .notice__body {
+  color: var(--color-warning);
+}
+
+.notice--danger {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+/* ---------- Forms ---------- */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field__label,
+.fieldset__legend {
+  font-weight: var(--font-weight-semibold);
+}
+
+.field__hint,
+.hint {
+  color: var(--color-text-muted);
+}
+
+.field__error {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--color-danger);
+  font-weight: var(--font-weight-semibold);
+}
+
+.input {
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.field--invalid .input {
+  border: var(--border-width-strong) solid var(--color-danger);
+}
+
+.field--narrow .input {
+  max-width: 8ch;
+}
+
+.input--date {
+  max-width: 14rem;
+}
+
+.file-input {
+  font: inherit;
+  min-height: var(--target-min);
+}
+
+.fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.fieldset__legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-md);
+}
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+}
+
+.choice input {
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.choice label {
+  flex: 1;
+  padding-block: var(--space-2);
+  cursor: pointer;
+}
+
+.field-row {
+  display: grid;
+  gap: var(--space-5);
+}
+
+@media (min-width: 30em) {
+  .field-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .field-row--street {
+    grid-template-columns: 3fr 1fr;
+  }
+
+  .field-row--city {
+    grid-template-columns: 1fr 2fr;
+  }
+}
+
+.disclosure summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--color-link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.error-summary {
+  padding: var(--space-4);
+  background: var(--color-danger-subtle);
+  border: var(--border-width-strong) solid var(--color-danger);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+
+.error-summary__heading {
+  font-size: var(--font-size-lg);
+  color: var(--color-danger);
+  margin-bottom: var(--space-2);
+}
+
+.error-summary__list a {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---------- Badges, tags, skeletons ---------- */
+.badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.badge--received {
+  background: var(--color-status-received-bg);
+  color: var(--color-status-received-text);
+}
+
+.badge--drawing {
+  background: var(--color-status-drawing-bg);
+  color: var(--color-status-drawing-text);
+}
+
+.badge--drawn {
+  background: var(--color-status-drawn-bg);
+  color: var(--color-status-drawn-text);
+}
+
+.badge--ready-to-ship {
+  background: var(--color-status-ready-to-ship-bg);
+  color: var(--color-status-ready-to-ship-text);
+}
+
+.badge--shipped {
+  background: var(--color-status-shipped-bg);
+  color: var(--color-status-shipped-text);
+}
+
+.badge--cancelled {
+  background: var(--color-status-cancelled-bg);
+  color: var(--color-status-cancelled-text);
+}
+
+.tag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.skeleton {
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+  min-height: var(--space-5);
+}
+
+.skeleton--card {
+  min-height: var(--space-8);
+}
+
+.skeleton--row {
+  min-height: var(--target-min-dense);
+}
+
+.skeleton--block {
+  min-height: var(--space-8);
+}
+
+.skeleton--field {
+  min-height: var(--target-min);
+  max-width: 20rem;
+}
+
+.skeleton--sheet {
+  aspect-ratio: 180 / 267;
+  max-width: 30rem;
+}
+
+/* ---------- Cards, facts, tables ---------- */
+.card {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+.facts--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.address {
+  display: flex;
+  flex-direction: column;
+}
+
+.big-fact {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+}
+
+.thumbnail {
+  width: var(--space-7);
+  height: var(--space-7);
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.thumbnail--large {
+  width: 10rem;
+  height: auto;
+}
+
+/* ---------- The drawing sheet (always white paper) ---------- */
+.sheet {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-paper);
+  padding: 8%;
+}
+
+.sheet__drawing {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---------- Dialog (X5) ---------- */
+.dialog {
+  max-width: min(32rem, calc(100% - var(--space-6)));
+  padding: var(--space-5);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-dialog);
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dialog::backdrop {
+  background: color-mix(in srgb, var(--color-text) 40%, transparent);
+}
+
+.dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

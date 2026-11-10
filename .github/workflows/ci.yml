@@ -99,6 +99,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+        env:
+          VITE_CONTACT_EMAIL: hello@example.com
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Design token contrast (UX-012)
