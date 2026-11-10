@@ -5,7 +5,7 @@ Let the admin keep the frame catalogue: add and edit frame models with name, fra
 ## ADDED Requirements
 
 ### Requirement: Adding a frame
-The admin SHALL be able to add a frame with a name, an inner width and height in mm of at least the drawing area (180 x 267 mm by default, portrait), a price in whole euro cents including VAT above zero, a JPEG, PNG or WebP photo of at most 5 MB and a starting stock of zero or more. Invalid input MUST be rejected naming each invalid field (BR-006, BR-003).
+The admin SHALL be able to add a frame with a name, an inner width and height in mm of at least the drawing area (180 x 267 mm by default, portrait), a price in whole euro cents including VAT above zero, a JPEG, PNG or WebP photo of at most 5 MB and a starting stock of zero or more. Invalid input MUST be rejected naming each invalid field. The admin settings show the drawing area read-only (BR-006, BR-003).
 
 #### Scenario: AC-039 Admin adds a frame
 - **WHEN** the admin adds frame "Oak A4" with size 210 x 297 mm, price 4995 cents, a JPEG photo and stock 5
@@ -17,6 +17,7 @@ The admin SHALL be able to add a frame with a name, an inner width and height in
 - **WHEN** the admin adds frame "Mini 13x18" with size 130 x 180 mm, price 1995 cents, a photo and stock 3
 - **THEN** the frame is rejected with a message that it must be at least 180 x 267 mm
 - **AND** no frame is created
+- **AND** the admin settings show the drawing area as 180 x 267 mm, which the admin can't edit there
 
 #### Scenario: AC-041 Invalid price, stock or missing photo is rejected
 - **WHEN** the admin adds frame "Walnut 30x40" with size 300 x 400 mm, price 0 cents, stock -1 and no photo
@@ -46,3 +47,11 @@ The admin SHALL be able to change a frame's stock by a signed whole number. An a
 - **WHEN** the admin adjusts its stock by -3
 - **THEN** the adjustment is rejected with a message that stock can't go below zero
 - **AND** "Oak A4" still has stock 2
+
+### Requirement: Frame photos without location data
+Before a frame photo is stored, the system SHALL remove its embedded metadata, such as EXIF and XMP with GPS location, camera details and dates, so the photo customers see reveals nothing about where it was taken (SR-023).
+
+#### Scenario: AC-066 Frame photo with GPS location is offered without it
+- **WHEN** the admin adds frame "Oak A4" with a JPEG photo taken on a phone that contains GPS coordinates 52.0907 N, 5.1214 E in its EXIF data
+- **THEN** the frame photo customers receive contains no EXIF or XMP metadata and no GPS coordinates
+- **AND** it still shows the same picture

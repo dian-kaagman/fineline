@@ -82,8 +82,10 @@ paths:
                   strokeCount: { type: integer }
                   totalLengthMm: { type: number }
         "400":
-          description: "`photo_too_small` (shortest side under minShortSidePx), `photo_unreadable` (cannot be decoded), `validation_failed` (bad parameters)."
+          description: "`photo_too_small` (shortest side under minShortSidePx), `photo_too_many_pixels` (more than 50 megapixels, checked before decoding - SR-003), `photo_unreadable` (cannot be decoded, or not JPEG/PNG/HEIF), `validation_failed` (bad parameters)."
         "401":
           description: "`unauthenticated`: missing or wrong bearer token."
         "422":
           description: "`no_drawable_content`: the photo yields no usable lines (e.g. a blank or nearly uniform image)."
+        "503":
+          description: "`busy`: the maximum number of concurrent conversions (default 2) is running; retry later (SR-004)."

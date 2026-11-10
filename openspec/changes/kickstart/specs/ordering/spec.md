@@ -74,23 +74,52 @@ The system MUST NOT sell more frames than are in stock, even when orders arrive 
 - **AND** that customer can choose "Walnut 30x40" and place the order
 
 ### Requirement: The preview is what is ordered
-The order SHALL store exactly the drawing the customer previewed; it MUST NOT be regenerated after ordering. An order MUST be rejected when its preview has expired or belongs to another browser session (BR-005, BR-010, BR-013).
+The order SHALL store exactly the drawing the customer previewed; it MUST NOT be regenerated after ordering. An order MUST be rejected when its preview is unknown or expired or the preview token is missing or wrong, with one identical "no longer available" answer for all these cases, also when the preview was already ordered (BR-005, BR-010, BR-013, SR-009).
 
 #### Scenario: AC-021 Ordered drawing is identical to the preview
 - **GIVEN** a customer saw a preview and placed order FL-2026-0042 with it
 - **WHEN** the deployment's drawing area is later changed and the admin downloads the SVG of FL-2026-0042
 - **THEN** the downloaded SVG is byte-for-byte identical to the SVG shown to the customer as the preview
 
-#### Scenario: AC-022 Order for someone else's preview is rejected
-- **GIVEN** a preview was uploaded in another browser session
-- **WHEN** a customer places an otherwise valid order naming that preview without its preview token
+#### Scenario: AC-022 Order without the preview's token is rejected
+- **GIVEN** a preview was uploaded by another customer, who holds its preview token
+- **WHEN** someone places an otherwise valid order naming that preview without its preview token, or with a wrong one
 - **THEN** the order is rejected with "This preview is no longer available. Please upload your photo again."
 - **AND** no order is created and no frame stock is taken
+- **AND** the answer is identical, in status and content, to the answer for an unknown preview, an expired preview and a preview that has already been ordered
 
-### Requirement: No personal data in logs
-The system MUST NOT write customer names, email addresses, delivery addresses, photo or drawing contents, or original photo file names to its logs. Logs MAY contain order numbers and internal IDs (BR-014).
+### Requirement: Placing the same order again
+When an order is placed again for a drawing that has already been ordered, with that drawing's valid preview token, the system SHALL return the original confirmation (order number, price and estimated delivery date) and MUST NOT create an order, take stock or change the existing order; the frame and details in the repeated request are ignored (BR-018).
 
-#### Scenario: AC-023 Placing an order logs no personal data
+#### Scenario: AC-058 Retry after a lost confirmation shows the original order
+- **GIVEN** order FL-2026-0042 was placed on Friday 6 November 2026 with "Oak A4" and its preview token, and the stock of "Oak A4" became 2, but the confirmation never reached the customer's phone
+- **WHEN** the customer places the order again with the same preview and preview token, this time choosing "Walnut 30x40"
+- **THEN** the customer sees order number "FL-2026-0042", the price €49.95 and the estimated delivery date Tuesday 17 November 2026
+- **AND** no new order is created, the stock of "Oak A4" stays 2 and the stock of "Walnut 30x40" is unchanged
+
+### Requirement: Server-owned order values
+The order price, status, order number, order date and delivery date SHALL be set by the system only. An order request containing any field the order form does not send, such as a price or a status, MUST be rejected as invalid without creating an order (SR-016, BR-012).
+
+#### Scenario: AC-059 Order request with a price or status field is rejected
+- **WHEN** a valid order request is sent with the extra field "priceCents": 1, and again with the extra field "status": "shipped"
+- **THEN** both requests are rejected as invalid, naming the unexpected field
+- **AND** no order is created and no frame stock is taken
+
+### Requirement: Order limit per address
+The system SHALL accept at most 5 order requests per hour from one client address and refuse more with a suggested wait time, without creating an order. The client address MUST NOT be taken from a header the client can set (SR-017).
+
+#### Scenario: AC-060 Sixth order request in an hour is refused
+- **GIVEN** 5 order requests were sent from one client address between 14:00 and 14:30
+- **WHEN** a 6th valid order request is sent from that address at 14:40
+- **THEN** it is refused with "Too many tries in a short time. Please wait 20 minutes and try again." and a suggested wait time
+- **AND** no order is created and no frame stock is taken
+
+### Requirement: No personal data or secrets in logs and errors
+The system MUST NOT write customer names, email addresses, delivery addresses, photo or drawing contents, original photo file names, passwords, preview tokens, session IDs or database error details to its logs. Logs MAY contain order numbers and internal IDs. A server error SHALL be answered with a generic message only (BR-014, SR-018).
+
+#### Scenario: AC-023 A full flow logs no personal data or secrets
 - **WHEN** customer "Anna de Vries", email "anna@example.nl", address "Lindelaan 12, 3512 AB Utrecht, NL", uploads "anna-en-tim.heic" and places order FL-2026-0042
+- **AND** someone tries to log in to the admin tool with the wrong password "tulip-garden-77", the admin logs in and works on the order, and one order request fails on a database error
 - **THEN** the application logs may mention "FL-2026-0042"
-- **AND** the logs contain none of "Anna de Vries", "anna@example.nl", "Lindelaan 12", "3512 AB" or "anna-en-tim.heic"
+- **AND** the logs contain none of "Anna de Vries", "anna@example.nl", "Lindelaan 12", "3512 AB", "anna-en-tim.heic", "tulip-garden-77", the admin password, the preview token, the admin session ID or the database error's details
+- **AND** the failed request is answered only with "Something went wrong", without database or program details

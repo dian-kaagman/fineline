@@ -1,17 +1,17 @@
 # Business rules
 
-BR-001 to BR-011 are the domain pack's rules with the pack's IDs (`/mnt/session/uploads/domain/rules.md`). BR-012 onwards are new: they come from the pack's constraints or from lead decisions. Where the pack says "Default (confirm)", the value below is the default the kickstart uses; the owner still has to confirm it (see `open-questions.md`).
+BR-001 to BR-011 are the domain pack's rules with the pack's IDs (`/mnt/session/uploads/domain/rules.md`). BR-012 onwards are new: they come from the pack's constraints or from lead decisions. Security requirements (SR-001 to SR-023) live in `docs/security/threat-model.md`; the specs cite them next to the BR IDs, and the map at the end lists their scenarios. Where the pack says "Default (confirm)", the value below is the default the kickstart uses; the owner still has to confirm it (see `open-questions.md`).
 
 Source tags: `[pack: <file>#<id or heading>]`, `[brief]`, `[lead decision]`, `[assumption]` (every assumption is also in `open-questions.md`).
 
 Dates in examples are 2026 (6 November 2026 is a Friday, as in the pack's example).
 
 ## BR-001 Accepted photos
-A photo is a JPEG, PNG or HEIC file of at most 15 MB (15,728,640 bytes), with a shortest side of at least 800 pixels. Anything else is rejected with a message saying what is wrong, and no drawing is made.
-- **Source:** [pack: rules.md#BR-001] (Default (confirm)); values accepted for the kickstart: [lead decision] (Q-1)
+A photo is a JPEG, PNG or HEIC file of at most 15 MB (15,728,640 bytes), with a shortest side of at least 800 pixels and at most 50 megapixels (width x height <= 50,000,000). Anything else is rejected with a message saying what is wrong, and nothing is stored.
+- **Source:** [pack: rules.md#BR-001] (Default (confirm)); values accepted for the kickstart: [lead decision] (Q-1); the 50-megapixel upper limit is not in the pack: [lead decision] (Q-1), from `docs/security/threat-model.md` SR-003 / N-8
 - **Enforced in:** backend on upload (file type checked from the content, not only the file name); the customer page may pre-check
 - **Applies to slice:** yes
-- **Example:** a 4032 x 3024 HEIC of 3.1 MB is accepted; a 1200 x 700 JPEG is rejected ("shortest side must be at least 800 pixels"); a 16.2 MB PNG is rejected ("photo must be at most 15 MB"); a GIF is rejected ("use a JPEG, PNG or HEIC photo").
+- **Example:** a 4032 x 3024 HEIC of 3.1 MB is accepted; a 48-megapixel 8064 x 6048 JPEG of 12 MB is accepted; a 1200 x 700 JPEG is rejected ("shortest side must be at least 800 pixels"); a 16.2 MB PNG is rejected ("photo must be at most 15 MB"); a 10,000 x 6,000 JPEG of 9 MB (60 megapixels) is rejected (error code `photo_too_many_pixels`); a GIF, or an SVG named `photo.jpg`, is rejected ("use a JPEG, PNG or HEIC photo").
 
 ## BR-002 What a drawing is
 A drawing is an SVG that a pen arm can draw: strokes only, in black (`#000000`), with no fill, no gradients, no embedded images and no text; dimensions in millimetres, fitting inside the drawing area (BR-003); made of paths the arm can follow without lifting the pen more than needed.
@@ -73,14 +73,14 @@ Only the admin changes statuses (except the first one), one step forward at a ti
 | From | Event | To | Who | Rule |
 |---|---|---|---|---|
 | (new) | customer places order | received | customer | BR-007 |
-| received | SVG downloaded for the arm | drawing | admin | BR-009 |
+| received | SVG downloaded for the arm (not: opening the order or viewing the drawing) | drawing | admin | BR-009 |
 | drawing | marked drawn | drawn | admin | BR-009 |
 | drawn | marked ready to ship (framed and packed) | ready to ship | admin | BR-009 |
 | ready to ship | marked shipped (handed to carrier) | shipped | admin | BR-009 |
 | received, drawing | cancelled | cancelled | admin | BR-009, BR-006 (stock +1) |
 
-Downloading the SVG of a `received` order moves it to `drawing`. Downloading it again in any later status returns the same SVG and does not change the status (the drawing is redone from the same SVG when the pen runs dry). Any other transition (skipping a step, going back, cancelling from `drawn` or `ready to ship`) is rejected. `shipped` and `cancelled` are final.
-- **Source:** [pack: rules.md#BR-009], [pack: processes.md#Admin prepares the day's drawings]; download semantics and cancel only from received/drawing: [lead decision]; no backward steps: [assumption] (Q-29); cancel vs BR-006 wording: Q-11
+Downloading the SVG *for the arm* of a `received` order moves it to `drawing`. Downloading it for the arm again in any later status returns the same SVG and does not change the status (the drawing is redone from the same SVG when the pen runs dry). Opening an order, viewing its drawing or downloading the drawing any other way never changes the status. Any other transition (skipping a step, going back, cancelling from `drawn` or `ready to ship`) is rejected. `shipped` and `cancelled` are final.
+- **Source:** [pack: rules.md#BR-009], [pack: processes.md#Admin prepares the day's drawings]; download semantics and cancel only from received/drawing: [lead decision]; viewing never changes status, a separate "download for the arm" action does: [lead decision] (threat model N-1, UX G-1); no backward steps: [assumption] (Q-29); cancel vs BR-006 wording: Q-11
 - **Enforced in:** backend (status machine)
 - **Applies to slice:** yes
 - **Example:** FL-2026-0042 in `received`: download -> `drawing`; download again -> still `drawing`; mark drawn -> `drawn`; cancel -> rejected ("a drawn order can't be cancelled").
@@ -93,8 +93,8 @@ Customers agree to the photo terms before ordering: the photo is used only to ma
 - **Example:** a photo uploaded at 10:00 on Tuesday 3 November and not ordered is gone after 10:00 on Wednesday 4 November. FL-2026-0042 shipped on Tuesday 1 December: its photo is deleted on Thursday 31 December; its drawing can still be downloaded.
 
 ## BR-011 Admin access
-Every page and API call of the admin tool requires the admin to be logged in, including the photos and drawings of orders. There is one admin account, configured by the deployment; there is no sign-up and no password change in the admin tool.
-- **Source:** [pack: rules.md#BR-011]; account from deployment configuration, no sign-up or password change UI: [lead decision]
+Every page and API call of the admin tool requires the admin to be logged in, including the photos and drawings of orders. There is one admin account, configured by the deployment; there is no sign-up and no password change in the admin tool. A login session ends at logout, after 8 hours without use, or 24 hours after login; after 5 failed logins from one address in 15 minutes, logins from that address are refused until the 15 minutes have passed.
+- **Source:** [pack: rules.md#BR-011]; account from deployment configuration, no sign-up or password change UI: [lead decision]; session lifetime and login limit: [lead decision] from `docs/security/threat-model.md` SR-011, SR-012 (Q-26, Q-32)
 - **Enforced in:** backend (every admin route and every file route for order photos and drawings), web (redirect to login)
 - **Applies to slice:** yes
 - **Example:** `GET` of the order list without a session is refused with 401 and returns no order data.
@@ -107,8 +107,8 @@ The order price is the price of the chosen frame, in EUR cents including VAT, as
 - **Example:** "Oak A4" costs 4995 cents: the order price is 4995 (shown as €49.95). The admin later changes Oak A4 to 5495: FL-2026-0042 still shows €49.95.
 
 ## BR-013 Fresh previews are private
-A photo and its preview that are not yet part of an order can be retrieved and ordered only with the preview token given to the customer who uploaded it. Without the right token, or after the 24 hours (BR-010), the preview is reported as not available, with the same answer in both cases so nobody can tell whether it exists.
-- **Source:** [lead decision]; follows from [pack: rules.md#BR-010] and [pack: constraints.md#Legal and compliance]
+A photo and its preview that are not yet part of an order can be retrieved and ordered only with the preview token given to the customer who uploaded it. Without the right token, after the 24 hours (BR-010), or for an unknown preview, the preview is reported as not available, with the same answer in every case, so nobody without the token can tell whether a preview exists or was already ordered.
+- **Source:** [lead decision]; follows from [pack: rules.md#BR-010] and [pack: constraints.md#Legal and compliance]; identical answers: `docs/security/threat-model.md` SR-009
 - **Enforced in:** backend
 - **Applies to slice:** yes
 - **Example:** an order request naming someone else's preview, or one that expired, gets "This preview is no longer available. Please upload your photo again."
@@ -141,29 +141,58 @@ The customer can't adjust the drawing (detail level, crop) in this kickstart. If
 - **Applies to slice:** yes
 - **Example:** the customer uploads a dark photo, dislikes the preview, taps "Try another photo" and uploads a second photo, which gets a new preview.
 
+## BR-018 Placing the same order again
+Placing an order again for a drawing that has already been ordered, with that drawing's valid preview token, returns the original confirmation (order number, price, estimated delivery date) and changes nothing: no new order, no stock taken, the frame and details in the repeated request are ignored. Without the valid token the answer is the "not available" of BR-013.
+- **Source:** [lead decision] (UX gap G-6: a lost confirmation on a flaky phone connection must not leave the customer without their order number, since there are no emails)
+- **Enforced in:** backend (order placement)
+- **Applies to slice:** yes
+- **Example:** FL-2026-0042 was placed but the confirmation was lost; the phone retries with the same drawing and token (and, say, a different frame) and gets FL-2026-0042, €49.95, Tuesday 17 November; the stock of both frames is unchanged by the retry.
+
 ## Rule to scenario map
 
 Scenarios are in `openspec/changes/kickstart/specs/<capability>/spec.md`.
 
 | Rule | Scenarios |
 |---|---|
-| BR-001 | AC-001, AC-002, AC-003, AC-004 |
-| BR-002 | AC-005 |
-| BR-003 | AC-005, AC-021, AC-040 |
-| BR-004 | AC-006 |
+| BR-001 | AC-001, AC-002, AC-003, AC-004, AC-050, AC-051, AC-052, AC-053 |
+| BR-002 | AC-005, AC-055 |
+| BR-003 | AC-005, AC-021, AC-040 (drawing area shown read-only) |
+| BR-004 | AC-006, AC-055 |
 | BR-005 | AC-021, AC-031, AC-032 |
 | BR-006 | AC-013, AC-018, AC-020, AC-035, AC-039 to AC-044 |
 | BR-007 | AC-014, AC-015, AC-016, AC-018, AC-019 |
-| BR-008 | AC-018, AC-036, AC-037, AC-038, AC-045 to AC-049 |
-| BR-009 | AC-018, AC-029, AC-031 to AC-036 |
+| BR-008 | AC-018, AC-029 (order date), AC-036, AC-037, AC-038, AC-045 to AC-049 |
+| BR-009 | AC-018, AC-029, AC-030 (viewing keeps the status), AC-031 to AC-036 |
 | BR-010 | AC-010, AC-011, AC-012, AC-016, AC-027, AC-030 |
-| BR-011 | AC-024 to AC-028 |
-| BR-012 | AC-013, AC-018, AC-042 |
+| BR-011 | AC-024 to AC-028, AC-061 to AC-064 |
+| BR-012 | AC-013, AC-018, AC-042, AC-059 |
 | BR-013 | AC-010, AC-022 |
 | BR-014 | AC-023 |
 | BR-015 | AC-017 |
-| BR-016 | AC-007 |
+| BR-016 | AC-007, AC-065 |
 | BR-017 | AC-008, AC-009 |
+| BR-018 | AC-058 |
+
+Security requirements of type Spec (`docs/security/threat-model.md`):
+
+| SR | Scenarios |
+|---|---|
+| SR-001 Upload size while receiving, one file | AC-003 (streamed upload), AC-052 |
+| SR-002 Type from content | AC-002, AC-050 |
+| SR-003 Image bombs | AC-053 |
+| SR-004 Busy converter | AC-054 |
+| SR-006 Unsafe conversion result | AC-055 |
+| SR-007 SVG shown as image, safe download | AC-056, AC-031 |
+| SR-009 Preview token, identical answers | AC-010, AC-022, AC-058 |
+| SR-011 Login limit | AC-061 |
+| SR-012 Session and cookie | AC-062, AC-063, AC-028 |
+| SR-013 Admin tool header on changes | AC-064 |
+| SR-014 One auth gate | AC-026, AC-027 |
+| SR-016 Server-owned fields | AC-059 |
+| SR-017 Rate limits, real client address | AC-057, AC-060 |
+| SR-018 No secrets in logs, generic errors | AC-023 |
+| SR-019 Content security policy | AC-065 |
+| SR-023 Frame photo metadata | AC-066 |
 
 ## Out of slice
-No pack rule is out of slice. These neighbouring needs are not covered by the kickstart and are tracked in `open-questions.md`: payment and the price of the drawing (Q-8), deleting a customer's data on request (Q-24), a new drawing after ordering (Q-12), editing the drawing area in the admin UI (Q-2).
+No pack rule is out of slice. The original customer photo is kept as uploaded, including any EXIF data, visible to the admin only and deleted per BR-010 (accepted risk, Q-35). These neighbouring needs are not covered by the kickstart and are tracked in `open-questions.md`: payment and the price of the drawing (Q-8), deleting a customer's data on request (Q-24), a new drawing after ordering (Q-12), editing the drawing area in the admin UI (Q-2).

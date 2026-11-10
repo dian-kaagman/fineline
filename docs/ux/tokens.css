@@ -1,0 +1,135 @@
+/*
+ * Fineline design tokens (docs/ux/design-tokens.md is the source of truth).
+ * Copy into apps/web as-is. Use only these custom properties in component CSS:
+ * no hard-coded colours, font sizes, spacing or radii (UX-012).
+ * Every text/background and UI-component pair used is contrast-checked by
+ * docs/ux/check-contrast.py (run: python3 docs/ux/check-contrast.py).
+ * Light theme only in this slice; the drawing preview is always shown on white paper.
+ */
+
+:root {
+  /* ---------- Colour: neutrals ---------- */
+  --color-bg: #faf8f5;              /* page background ("paper" off-white) */
+  --color-surface: #ffffff;         /* cards, inputs, tables, the drawing "paper" */
+  --color-surface-sunken: #f1eee9;  /* table header, skeletons, sunken panels */
+  --color-text: #1a1a1a;            /* body text, headings, the "ink" */
+  --color-text-muted: #5c5955;      /* hints, secondary text, captions */
+  --color-border-strong: #85807a;   /* input, checkbox, radio and card borders (UI component, >= 3:1) */
+  --color-border-subtle: #e3ded8;   /* decorative dividers only, never the only boundary of a control */
+
+  /* ---------- Colour: brand / actions ---------- */
+  --color-primary: #0f5c63;         /* primary buttons, links, selected frame border */
+  --color-primary-hover: #0b464c;   /* hover/active of primary */
+  --color-on-primary: #ffffff;      /* text and icons on primary */
+  --color-primary-subtle: #e3f0f1;  /* selected frame card background */
+  --color-link: #0f5c63;            /* links (always underlined) */
+
+  /* ---------- Colour: focus ---------- */
+  --color-focus: #2b59c3;           /* focus ring on every focusable element (UX-002) */
+
+  /* ---------- Colour: feedback ---------- */
+  --color-danger: #b42318;          /* error text, error icon, invalid input border, destructive button */
+  --color-danger-hover: #8f1c13;
+  --color-on-danger: #ffffff;
+  --color-danger-subtle: #fdeceb;   /* error summary / error banner background */
+  --color-success: #1e6b3a;
+  --color-success-subtle: #e8f4ec;
+  --color-warning: #7a4f00;
+  --color-warning-subtle: #fff4d6;
+  --color-info: #1d4f91;
+  --color-info-subtle: #e8f0fb;
+  --color-disabled-text: #625e59;   /* text of disabled controls (still >= 4.5:1, readable) */
+  --color-disabled-bg: #ebe7e1;
+
+  /* ---------- Colour: order status badges (always with the text label, UX-011) ---------- */
+  --color-status-received-bg: #e8f0fb;      --color-status-received-text: #1d4f91;
+  --color-status-drawing-bg: #f1eafb;       --color-status-drawing-text: #5b2a96;
+  --color-status-drawn-bg: #e3f0f1;         --color-status-drawn-text: #0b464c;
+  --color-status-ready-to-ship-bg: #fff4d6; --color-status-ready-to-ship-text: #7a4f00;
+  --color-status-shipped-bg: #e8f4ec;       --color-status-shipped-text: #1e6b3a;
+  --color-status-cancelled-bg: #ebe7e1;     --color-status-cancelled-text: #4a4743;
+
+  /* ---------- Typography ---------- */
+  --font-family-base: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-family-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; /* order numbers */
+  --font-size-xs: 0.875rem;   /* 14px - captions, table meta; never for form inputs */
+  --font-size-sm: 1rem;       /* 16px - body, inputs (16px stops iOS zoom on focus) */
+  --font-size-md: 1.125rem;   /* 18px - lead text, frame names */
+  --font-size-lg: 1.25rem;    /* 20px - h3, card titles */
+  --font-size-xl: 1.5rem;     /* 24px - h2, step headings on phones */
+  --font-size-2xl: 2rem;      /* 32px - h1 on desktop, order number on confirmation */
+  --font-size-3xl: 2.5rem;    /* 40px - home hero heading on desktop */
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-body: 1.5;
+  --line-height-heading: 1.2;
+  --measure: 38rem;           /* max line length for running text */
+
+  /* ---------- Spacing (4px base) ---------- */
+  --space-1: 0.25rem;  /* 4 */
+  --space-2: 0.5rem;   /* 8 */
+  --space-3: 0.75rem;  /* 12 */
+  --space-4: 1rem;     /* 16 */
+  --space-5: 1.5rem;   /* 24 */
+  --space-6: 2rem;     /* 32 */
+  --space-7: 3rem;     /* 48 */
+  --space-8: 4rem;     /* 64 */
+
+  /* ---------- Radii ---------- */
+  --radius-sm: 4px;    /* inputs, badges */
+  --radius-md: 8px;    /* buttons, cards */
+  --radius-lg: 12px;   /* dialogs, frame cards */
+  --radius-pill: 999px;
+
+  /* ---------- Borders, focus, shadows ---------- */
+  --border-width: 1px;
+  --border-width-strong: 2px;      /* selected frame card, invalid input */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --focus-ring: var(--focus-ring-width) solid var(--color-focus);
+  --shadow-paper: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 16px rgb(0 0 0 / 0.08); /* drawing preview "sheet" */
+  --shadow-dialog: 0 8px 32px rgb(0 0 0 / 0.24);
+
+  /* ---------- Sizes ---------- */
+  --target-min: 44px;        /* min height/width of customer controls (UX-004) */
+  --target-min-dense: 32px;  /* min for admin table row buttons (UX-004) */
+  --content-max-shop: 40rem; /* customer column (640px) */
+  --content-max-admin: 75rem;/* admin content (1200px) */
+  --header-height: 3.5rem;   /* sticky headers; use as scroll-padding-top (UX-002) */
+
+  /* ---------- Motion ---------- */
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 250ms;
+  --motion-easing: cubic-bezier(0.2, 0, 0, 1);
+  --pen-animation-duration: 2.4s; /* the drawing-in-progress pen line (C2) */
+
+  /* ---------- Layers ---------- */
+  --z-header: 10;
+  --z-dialog: 100;
+}
+
+/* Breakpoints (min-width, mobile first). CSS custom properties can't be used in
+ * media queries, so use these literal values:
+ *   --bp-sm: 30em   (480px)  larger phones
+ *   --bp-md: 48em   (768px)  tablets; admin tables switch from stacked rows to a table
+ *   --bp-lg: 64em   (1024px) laptops; order detail uses two columns
+ *   --bp-xl: 80em   (1280px) wide laptops
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-base: 0ms;
+    --pen-animation-duration: 0s; /* C2 shows the static pen illustration instead (UX-010) */
+  }
+}
+
+html {
+  scroll-padding-top: calc(var(--header-height) + var(--space-4)); /* focused elements not hidden by sticky headers */
+}
+
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}

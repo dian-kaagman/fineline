@@ -8,6 +8,8 @@ The vocabulary for code, API and UI. Use the term in the first column; the code 
 |---|---|---|---|---|
 | Customer | Anyone who uploads a photo and orders a framed drawing; one-off buyer, no account, mostly on a phone | buyer | `customer` (fields on the order, no separate account) | [pack: overview.md#Users], [brief] |
 | Admin | The owner, the only user of the admin tool; one account, configured by the deployment | owner | `admin` | [pack: overview.md#Users], [pack: rules.md#BR-011], [lead decision] |
+| Admin session | The admin's logged-in state, held in the `fineline_admin` cookie; ends at logout, after 8 h without use or 24 h after login. Customers have no sessions | login | `adminSession` / `admin_sessions` | [pack: rules.md#BR-011], [lead decision], [repo: docs/security/threat-model.md#SR-012] |
+| Client address | The network address a request comes from, as seen by our own web server (never taken from a header the client sets); used only for rate limits and security events. Personal data | IP address | `clientIp` | [repo: docs/security/threat-model.md#SR-017] |
 
 ## Photo and drawing
 
@@ -43,8 +45,11 @@ The vocabulary for code, API and UI. Use the term in the first column; the code 
 | Order number | The reference the customer and admin see: `FL-<year>-<4 digits>`, counting up per year, e.g. `FL-2026-0042`. Not the internal ID | reference | `orderNumber` | [pack: glossary.md], [pack: rules.md#BR-007] |
 | Order price | The amount of the order in EUR cents including VAT; in this kickstart equal to the frame's price at the moment of ordering | price, total | `priceCents` | [lead decision] |
 | Delivery address | Where the framed drawing is shipped: street and house number, postal code, city, country (NL or BE) | address | `deliveryAddress` (`street`, `postalCode`, `city`, `country`) | [pack: rules.md#BR-007], [assumption] for the fields |
-| Order date | The calendar date in Europe/Amsterdam on which the order was placed | | `orderDate` (derived from `placedAt`, a UTC timestamp) | [lead decision] |
+| Order date | The calendar date in Europe/Amsterdam on which the order was placed; shown in the admin list and detail, and the earliest allowed delivery date | | `orderDate` (`YYYY-MM-DD`, derived from the UTC creation timestamp) | [lead decision] |
 | Order status | Where an order is in its life: `received`, `drawing`, `drawn`, `ready to ship`, `shipped`, `cancelled` | status | `status`: `received`, `drawing`, `drawn`, `ready_to_ship`, `shipped`, `cancelled` | [pack: rules.md#BR-009] |
+| Open orders | All orders that are not `shipped` or `cancelled`; the default view of the admin order list | to do | `open` (list filter; `all` shows every order) | [lead decision] (UX G-2) |
+| Download for the arm | The admin's action that downloads an order's SVG to import into the Rotrics software; for a `received` order it starts the drawing (status `drawing`). Distinct from *viewing* the drawing on the order page, which never changes the status | download SVG | `drawing-download` (API action); viewing: `drawing.svg` | [pack: rules.md#BR-009], [lead decision] (threat model N-1) |
+| Order confirmation | What the customer sees after placing an order: order number, price, estimated delivery date. Placing the same order again with the same preview token shows the same confirmation | confirmation | `OrderConfirmation` | [pack: processes.md#Customer orders a drawing], [lead decision] (BR-018) |
 | Lead time | The standard number of working days between order date and delivery, set by the admin; default 7 | delivery time, levertijd | `leadTimeWorkingDays` | [pack: glossary.md], [pack: rules.md#BR-008] |
 | Working day | Monday to Friday. Public holidays are not skipped in this kickstart | business day | `workingDay` | [pack: rules.md#BR-008], [lead decision] |
 | Estimated delivery date | The delivery date shown to the customer when ordering (order date + lead time in working days); the admin can change it for a single order | delivery date, expected date | `estimatedDeliveryDate` (one field; the admin's change overwrites it) | [pack: glossary.md], [pack: rules.md#BR-008] |
