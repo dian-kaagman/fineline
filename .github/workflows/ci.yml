@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege (SR-021): no job needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (apps/api)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fineline
+          POSTGRES_PASSWORD: ci-only-throwaway
+          POSTGRES_DB: fineline_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fineline -d fineline_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://fineline:ci-only-throwaway@localhost:5432/fineline_test
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  worker:
+    name: Worker (apps/worker)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/worker
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: apps/worker/.python-version
+      - name: Install uv
+        run: python -m pip install --disable-pip-version-check "uv>=0.8,<0.9"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+      - name: Audit locked dependencies
+        run: |
+          uv export --frozen --no-dev --no-hashes --no-emit-project --format requirements-txt > /tmp/requirements.txt
+          uvx --python 3.12 pip-audit@2.10.1 --strict --disable-pip --no-deps -r /tmp/requirements.txt
+
+  web:
+    name: Web (apps/web)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Generated API types match docs/api/openapi.yaml
+        run: npm run check:api
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_CONTACT_EMAIL: hello@example.com
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Design token contrast (UX-012)
+        working-directory: .
+        run: python3 docs/ux/check-contrast.py
+
+  specs:
+    name: OpenSpec and API contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: npx -y @fission-ai/openspec@1 validate --all --strict --no-interactive
+        env:
+          OPENSPEC_TELEMETRY: "0"
+      - run: npx -y @redocly/cli@2.77.0 lint docs/api/openapi.yaml docs/api/worker-openapi.yaml
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: gitleaks (official container image)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 git /repo --redact --verbose
+
+  compose:
+    name: Compose config and end-to-end smoke test
+    runs-on: ubuntu-latest
+    needs: [api, worker, web]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Create .env with throwaway secrets
+        run: |
+          cp .env.example .env
+          sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" .env
+          sed -i "s|^WORKER_TOKEN=.*|WORKER_TOKEN=$(openssl rand -hex 32)|" .env
+          # Plain HTTP on localhost in CI; Node's fetch does not treat Secure cookies specially.
+          sed -i "s|^COOKIE_SECURE=.*|COOKIE_SECURE=false|" .env
+      - name: Check hardening properties of the compose file (SR-004, SR-005, SR-015, SR-021)
+        run: node scripts/check-compose.mjs
+      - run: docker compose build
+      - name: Generate the admin password hash with the API image
+        run: |
+          echo "SMOKE_ADMIN_PASSWORD=$(openssl rand -hex 12)" >> "$GITHUB_ENV"
+          source "$GITHUB_ENV"
+          HASH=$(printf '%s\n' "$SMOKE_ADMIN_PASSWORD" | docker compose run --rm -T --no-deps api node dist/scripts/hash-password.js)
+          sed -i "s|^ADMIN_PASSWORD_HASH=.*|ADMIN_PASSWORD_HASH=${HASH}|" .env
+      - run: docker compose up -d --wait --wait-timeout 180
+      - name: Smoke test through nginx
+        run: node scripts/smoke.mjs
+        env:
+          SMOKE_BASE_URL: http://localhost:8080
+          SMOKE_ADMIN_USERNAME: admin
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+      - if: always()
+        run: docker compose down -v

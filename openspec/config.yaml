@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  Fineline: a one-person studio's web shop for robot-drawn, framed line portraits.
+  Parts: apps/api (TypeScript, Fastify, PostgreSQL), apps/worker (Python photo-to-SVG conversion), apps/web (React SPA).
+  Business rules live in docs/domain/business-rules.md (BR-xxx); cite them in requirements. Security requirements: docs/security/threat-model.md (SR-xxx). UX requirements: docs/ux/ (UX-xxx).
+  Use the glossary terms (docs/domain/glossary.md): photo, drawing, preview, stroke, drawing area, frame, stock, order, order number, lead time, estimated delivery date.
+  Money in integer euro cents incl. VAT. Calendar dates shown to people in Europe/Amsterdam; timestamps stored in UTC. Lengths in millimetres.
+  UI language is English, ready for translation; API and code are English.
+  Customer photos are personal data: processed only on our own server, never logged, deleted per BR-010.
+  Scenario IDs (AC-xxx) are numbered across the project; tests name the AC ID they cover.
+
+# Project context (optional)
+# Add only constraints that should guide OpenSpec artifacts and workflows.
+# Include constraints an agent cannot infer by reading the code.
+# Keep general project documentation and discoverable codebase facts out.
+# Example:
+#   context: |
+#     Designs and tasks must cover Windows, macOS, and Linux
+#     Write all artifacts in Spanish
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

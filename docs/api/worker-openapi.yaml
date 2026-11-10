@@ -1,0 +1,93 @@
+openapi: 3.1.0
+info:
+  title: Fineline conversion worker (internal)
+  version: 0.1.0
+  description: |
+    Internal HTTP service that turns a photo into a pen-plottable SVG drawing (BR-002 to BR-004).
+    Called only by the API over the private Docker network; never exposed to browsers or the
+    internet. Every call except /health must carry `Authorization: Bearer <WORKER_TOKEN>`
+    (shared secret from the environment of both services); otherwise 401.
+    The worker is stateless: it stores nothing on disk and never logs image content or metadata
+    that could identify a person.
+    Errors use the same shape as the public API: `{ "error": { "code", "message" } }`.
+servers:
+  - url: http://localhost:8000
+    description: Worker in local development
+security:
+  - workerToken: []
+components:
+  securitySchemes:
+    workerToken:
+      type: http
+      scheme: bearer
+      description: Shared secret WORKER_TOKEN known only to the API and the worker.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness
+      security: []
+      responses:
+        "200":
+          description: Up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+  /v1/convert:
+    post:
+      operationId: convert
+      summary: Convert one photo into a drawing within the given drawing area and stroke budget
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, areaWidthMm, areaHeightMm, maxStrokes, maxTotalLengthMm]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG or HEIC bytes (the API has already checked type and the 15 MB limit).
+                areaWidthMm: { type: number, example: 180 }
+                areaHeightMm: { type: number, example: 267 }
+                maxStrokes: { type: integer, example: 1500 }
+                maxTotalLengthMm: { type: number, example: 25000 }
+                minShortSidePx:
+                  type: integer
+                  default: 800
+                  description: Minimum shortest side of the photo after EXIF orientation (BR-001).
+      responses:
+        "200":
+          description: |
+            The drawing. Guarantees: root `<svg>` with `width`/`height` in `mm` equal to the area
+            and a matching `viewBox` in millimetres; only `<path>` elements (optionally grouped in
+            `<g>`), each `fill="none"` and `stroke="#000"`; no fills, gradients, images, text,
+            scripts, styles or external references; every coordinate inside the area;
+            `strokeCount <= maxStrokes` and `totalLengthMm <= maxTotalLengthMm`. Each path is one
+            stroke (pen down to pen up) and strokes are ordered to keep pen-up travel short.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [svg, widthMm, heightMm, strokeCount, totalLengthMm]
+                properties:
+                  svg: { type: string }
+                  widthMm: { type: number }
+                  heightMm: { type: number }
+                  strokeCount: { type: integer }
+                  totalLengthMm: { type: number }
+        "400":
+          description: "`photo_too_small` (shortest side under minShortSidePx), `photo_too_many_pixels` (more than 50 megapixels, checked before decoding - SR-003), `photo_unreadable` (cannot be decoded, or not JPEG/PNG/HEIF), `validation_failed` (bad parameters)."
+        "401":
+          description: "`unauthenticated`: missing or wrong bearer token."
+        "413":
+          description: "`payload_too_large`: request body over 16 MiB (cannot happen behind the API's 15 MiB limit)."
+        "422":
+          description: "`no_drawable_content`: the photo yields no usable lines (e.g. a blank or nearly uniform image)."
+        "503":
+          description: "`busy`: the maximum number of concurrent conversions (default 2) is running; retry later (SR-004)."

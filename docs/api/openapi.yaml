@@ -1,0 +1,948 @@
+openapi: 3.1.0
+info:
+  title: Fineline API
+  version: 0.1.0
+  description: |
+    Public (customer) and admin HTTP API of the Fineline drawing-order shop.
+
+    Conventions (apply to every operation):
+    - Base path `/api/v1`. JSON request and response bodies (UTF-8) unless stated otherwise.
+    - IDs are UUID v4 strings. The customer-facing order reference is the order number `FL-<year>-<4 digits>`.
+    - Money is an integer number of euro cents including VAT, in fields ending in `Cents`.
+    - Calendar dates (estimated delivery date) are `YYYY-MM-DD`, meaning the date in Europe/Amsterdam.
+      Timestamps are ISO 8601 in UTC (`2026-11-06T10:15:00Z`).
+    - Lengths of drawings and frames are millimetres, in fields ending in `Mm`.
+    - Precedence for admin calls: authentication (401) is checked before the CSRF header (403), except on
+      login, which needs only the header.
+    - Every error response uses the `Error` schema. `code` is stable and machine-readable;
+      `message` is safe to show to a person and never contains stack traces or internals.
+    - Admin operations (`/api/v1/admin/...`, except `POST /api/v1/admin/session`) require the
+      `fineline_admin` session cookie set by `POST /api/v1/admin/session`; without a valid session
+      they answer 401 `unauthenticated` (BR-011, SR-014). Every unsafe admin request (POST, PUT, PATCH,
+      DELETE under `/api/v1/admin/`), including login and logout, also requires the header
+      `X-Requested-With: fineline` (CSRF defence, SR-013); without it the API answers 403 `csrf_failed`
+      before reading the body. The cookie is HttpOnly, SameSite=Strict, Path=/api/v1/admin and Secure
+      (opt-out `COOKIE_SECURE=false` for http://localhost only); sessions expire after 8 h idle and
+      24 h absolute (SR-012).
+    - Rate limits (SR-011, SR-017) answer 429 `rate_limited` with a `Retry-After` header (seconds).
+    - Admin responses and the responses of `POST /drawings` and `POST /orders` carry `Cache-Control: no-store`.
+    - Validation errors (`validation_failed`) list `details` per field (dotted path) and never echo the input.
+      Unknown fields in JSON bodies are rejected. A malformed UUID in a path answers 404.
+    - 5xx responses are generic: `{ "error": { "code": "internal_error", "message": "Something went wrong" } }`.
+    - Any operation may also answer: 404 `not_found` (unknown route), 413 `payload_too_large` (JSON body over
+      64 KiB), 415 `unsupported_media_type` (wrong Content-Type), 500 `internal_error`. An empty body with
+      `Content-Type: application/json` is accepted where the operation has no request body.
+    - The web app is served from the same origin as the API (the web server proxies `/api`).
+servers:
+  - url: http://localhost:3000
+    description: API in local development (the web dev server proxies /api to it)
+security:
+  - adminSession: []
+tags:
+  - name: health
+  - name: drawings
+  - name: frames
+  - name: orders
+  - name: admin-session
+  - name: admin-orders
+  - name: admin-frames
+  - name: admin-settings
+paths:
+  /api/v1/health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      security: []
+      summary: Liveness and database check
+      responses:
+        "200":
+          description: The API is up and can reach the database.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+        "503":
+          description: "`unavailable`: the database cannot be reached."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/drawings:
+    post:
+      tags: [drawings]
+      operationId: createDrawing
+      security: []
+      summary: Upload a photo and generate the drawing preview
+      description: |
+        Validates the photo (BR-001), converts it on our own server into an SVG drawing that
+        follows BR-002 to BR-004, stores photo and drawing, and returns the drawing with a
+        one-off `previewToken` that only this customer holds. The token is needed to order the
+        drawing. Conversion is synchronous and typically takes a few seconds.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG or HEIC, at most 15 MB, shortest side at least 800 px.
+      responses:
+        "201":
+          description: Drawing generated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DrawingPreview" }
+        "400":
+          description: |
+            Photo rejected. Codes: `photo_missing`, `photo_unsupported_type`, `photo_too_small`,
+            `photo_unreadable`, `photo_too_many_pixels` (over 50 megapixels, BR-001),
+            `photo_no_drawable_content` (blank or nearly uniform photo - try another),
+            `validation_failed` (more than one file part, or unexpected fields).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413":
+          description: "`photo_too_large`: the photo is over 15 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: |
+            `conversion_unavailable`: the drawing could not be made right now (worker down, busy, timed out,
+            or its result failed the drawing check). Carries `Retry-After` when the worker is busy (SR-004).
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/frames:
+    get:
+      tags: [frames]
+      operationId: listAvailableFrames
+      security: []
+      summary: Frames customers can choose (stock above zero)
+      responses:
+        "200":
+          description: Frames with stock > 0, ordered by price ascending. Stock counts are not exposed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [frames]
+                properties:
+                  frames:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicFrame" }
+
+  /api/v1/frames/{frameId}/photo:
+    get:
+      tags: [frames]
+      operationId: getFramePhoto
+      security: []
+      summary: Photo of a frame model (public product image, metadata stripped - SR-023; nosniff and sandbox CSP - SR-007)
+      description: Served for every existing frame, including frames with stock 0 (the admin tool shows them too).
+      parameters:
+        - $ref: "#/components/parameters/FrameId"
+      responses:
+        "200":
+          description: The image.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/orders:
+    post:
+      tags: [orders]
+      operationId: placeOrder
+      security: []
+      summary: Place an order for a previewed drawing
+      description: |
+        Stores exactly the previewed drawing (BR-005), takes one frame from stock atomically
+        (BR-006), assigns the order number (BR-007) and the estimated delivery date from the
+        current lead time (BR-008). Status becomes `received` (BR-009).
+
+        Checks run in this order (SR-009): body schema -> drawing exists and token matches (else
+        404 `drawing_not_found`) -> already ordered (replay, below; works also after the 24 h
+        expiry) -> not expired (else the same 404 `drawing_not_found`) -> frame. If the drawing was already ordered with this valid token (for example the customer
+        retried after a lost response), the original confirmation is returned with 200 and nothing
+        changes; the request's frame and details are ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaceOrderRequest" }
+      responses:
+        "200":
+          description: This drawing was already ordered with this preview token; the original confirmation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderConfirmation" }
+        "201":
+          description: Order placed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderConfirmation" }
+        "400":
+          description: |
+            `validation_failed` (with `details` per field; includes unknown fields such as `priceCents`
+            or `status`, SR-016), `photo_terms_not_accepted`, `country_not_supported`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: "`drawing_not_found`: unknown drawing, wrong preview token, or the drawing expired (older than 24 h)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            `frame_sold_out` ("this frame just sold out" - pick another frame).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "`frame_not_found`: the frame does not exist (stock 0 is `frame_sold_out`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/admin/session:
+    post:
+      tags: [admin-session]
+      operationId: login
+      security: []
+      summary: Log the admin in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, minLength: 1, maxLength: 200 }
+                password: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "200":
+          description: Logged in. Sets the `fineline_admin` cookie (HttpOnly, SameSite=Strict, Secure in production).
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSession" }
+        "401":
+          description: "`invalid_credentials`: same response whether username or password is wrong."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "400":
+          description: "`validation_failed`: malformed body."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    get:
+      tags: [admin-session]
+      operationId: getSession
+      summary: Who is logged in
+      responses:
+        "200":
+          description: A valid session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSession" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    delete:
+      tags: [admin-session]
+      operationId: logout
+      summary: Log out (invalidates the session server-side and clears the cookie)
+      responses:
+        "204":
+          description: Logged out.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+
+  /api/v1/admin/orders:
+    get:
+      tags: [admin-orders]
+      operationId: listOrders
+      summary: List orders with status and delivery date
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: |
+            `open` (default): every status except shipped and cancelled; `all`: every order; or one status.
+          schema:
+            oneOf:
+              - type: string
+                enum: [open, all]
+              - $ref: "#/components/schemas/OrderStatus"
+            default: open
+      responses:
+        "200":
+          description: Orders sorted by estimated delivery date ascending, then order number ascending.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orders]
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrderSummary" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /api/v1/admin/orders/{orderId}:
+    get:
+      tags: [admin-orders]
+      operationId: getOrder
+      summary: Open an order
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderDetail" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [admin-orders]
+      operationId: changeOrderDeliveryDate
+      summary: Change the estimated delivery date of one order
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estimatedDeliveryDate]
+              additionalProperties: false
+              properties:
+                estimatedDeliveryDate:
+                  type: string
+                  format: date
+                  description: New date, not before the order date.
+      responses:
+        "200":
+          description: Updated order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderDetail" }
+        "400":
+          description: "`validation_failed` (malformed date) or `delivery_date_before_order_date`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: "`order_closed`: shipped or cancelled orders keep their date."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/orders/{orderId}/drawing.svg:
+    get:
+      tags: [admin-orders]
+      operationId: getOrderDrawing
+      summary: The order's SVG, for viewing (no status change)
+      description: |
+        Returns exactly the drawing the customer previewed (BR-005). Has no side effects: used to
+        show the drawing on the order detail page (fetched and shown as an image) and for
+        re-downloads. Sent with `Content-Disposition: attachment; filename="<orderNumber>.svg"`,
+        `X-Content-Type-Options: nosniff`, a sandboxing `Content-Security-Policy` and
+        `Cache-Control: private, no-store` (SR-007).
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The SVG file.
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="FL-2026-0042.svg"' }
+          content:
+            image/svg+xml:
+              schema: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/orders/{orderId}/drawing-download:
+    post:
+      tags: [admin-orders]
+      operationId: downloadOrderDrawingForArm
+      summary: Download the order's SVG for the robot arm (starts the drawing)
+      description: |
+        Returns the same SVG and headers as `GET .../drawing.svg`, and moves a `received` order to
+        `drawing` (BR-009) in the same request. In any other status (including shipped and
+        cancelled) the status is unchanged. Requires the CSRF header like every unsafe admin call;
+        the web app saves the response body as a file.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The SVG file.
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="FL-2026-0042.svg"' }
+          content:
+            image/svg+xml:
+              schema: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/orders/{orderId}/photo:
+    get:
+      tags: [admin-orders]
+      operationId: getOrderPhoto
+      summary: The customer's original photo (admin only)
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The original photo as uploaded.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/heic: { schema: { type: string, format: binary } }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          description: "`photo_deleted`: the photo was deleted under the retention rule (BR-010)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/orders/{orderId}/status:
+    post:
+      tags: [admin-orders]
+      operationId: changeOrderStatus
+      summary: Move an order to another status
+      description: |
+        Only transitions in BR-009 are allowed. `drawing` cannot be set here: an order moves from
+        `received` to `drawing` only through `POST .../drawing-download`, so `allowedNextStatuses`
+        of a `received` order is `[cancelled]`. Cancelling returns one frame to stock (BR-006).
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status: { $ref: "#/components/schemas/OrderStatus" }
+      responses:
+        "200":
+          description: Updated order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderDetail" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: "`invalid_transition`: the move is not allowed from the current status (message names both statuses)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/frames:
+    get:
+      tags: [admin-frames]
+      operationId: adminListFrames
+      summary: All frames including those out of stock
+      responses:
+        "200":
+          description: Frames ordered by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [frames]
+                properties:
+                  frames:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminFrame" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [admin-frames]
+      operationId: createFrame
+      summary: Add a frame model
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, widthMm, heightMm, priceCents, stock, photo]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                widthMm: { type: integer, description: "Inner width; must fit the drawing area (BR-006, BR-003)." }
+                heightMm: { type: integer, description: "Inner height; must fit the drawing area." }
+                priceCents: { type: integer, minimum: 1 }
+                stock: { type: integer, minimum: 0 }
+                photo: { type: string, format: binary, description: "JPEG, PNG or WebP, at most 5 MB." }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFrame" }
+        "400":
+          description: |
+            `validation_failed` with one `details` entry per problem, all reported together: missing or
+            invalid fields, a missing photo (`photo`), a size smaller than the drawing area (`widthMm` /
+            `heightMm`, BR-006), a photo that is not JPEG, PNG or WebP (`photo`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "413":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/frames/{frameId}:
+    get:
+      tags: [admin-frames]
+      operationId: adminGetFrame
+      summary: Open a frame
+      parameters:
+        - $ref: "#/components/parameters/FrameId"
+      responses:
+        "200":
+          description: The frame.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFrame" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [admin-frames]
+      operationId: updateFrame
+      summary: Edit name, size or price (stock changes go through stock adjustments)
+      parameters:
+        - $ref: "#/components/parameters/FrameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                widthMm: { type: integer }
+                heightMm: { type: integer }
+                priceCents: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFrame" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/frames/{frameId}/photo:
+    put:
+      tags: [admin-frames]
+      operationId: replaceFramePhoto
+      summary: Replace the photo of a frame
+      parameters:
+        - $ref: "#/components/parameters/FrameId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo: { type: string, format: binary }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFrame" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/admin/frames/{frameId}/stock-adjustments:
+    post:
+      tags: [admin-frames]
+      operationId: adjustFrameStock
+      summary: Add or remove stock by a signed amount
+      parameters:
+        - $ref: "#/components/parameters/FrameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delta]
+              additionalProperties: false
+              properties:
+                delta: { type: integer, minimum: -10000, maximum: 10000, not: { const: 0 } }
+      responses:
+        "200":
+          description: Updated frame with the new stock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFrame" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: "`stock_negative`: the adjustment would make stock below zero."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/settings:
+    get:
+      tags: [admin-settings]
+      operationId: getSettings
+      summary: Current settings (standard lead time)
+      responses:
+        "200":
+          description: Current settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettingsView" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    put:
+      tags: [admin-settings]
+      operationId: updateSettings
+      summary: Set the standard lead time (applies to orders placed afterwards only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/Settings"
+              unevaluatedProperties: false
+              description: Only `leadTimeWorkingDays`; unknown fields are rejected.
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettingsView" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CsrfFailed"
+
+components:
+  securitySchemes:
+    adminSession:
+      type: apiKey
+      in: cookie
+      name: fineline_admin
+      description: Session cookie set by POST /api/v1/admin/session (BR-011).
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    FrameId:
+      name: frameId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Error:
+      description: Error (see the `Error` schema).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthenticated:
+      description: "`unauthenticated`: no valid admin session."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    CsrfFailed:
+      description: "`csrf_failed`: the X-Requested-With header is missing."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: "`rate_limited`: too many requests; retry after the `Retry-After` header."
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: frame_sold_out }
+            message: { type: string, example: This frame just sold out. Please pick another frame. }
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string, example: address.postalCode }
+                  message: { type: string }
+
+    OrderStatus:
+      type: string
+      enum: [received, drawing, drawn, ready_to_ship, shipped, cancelled]
+
+    DrawingPreview:
+      type: object
+      required: [drawingId, previewToken, svg, widthMm, heightMm, strokeCount, totalLengthMm, expiresAt]
+      properties:
+        drawingId: { type: string, format: uuid }
+        previewToken:
+          type: string
+          description: Secret that proves this customer uploaded the photo. Send it when ordering. Not stored in plain text server-side.
+        svg:
+          type: string
+          description: The drawing (BR-002) as SVG markup. The web app shows it as an image (data URL), never inlined into the DOM.
+        widthMm: { type: number, example: 180 }
+        heightMm: { type: number, example: 267 }
+        strokeCount: { type: integer, example: 812 }
+        totalLengthMm: { type: number, example: 14250.5 }
+        expiresAt:
+          type: string
+          format: date-time
+          description: After this moment the drawing can no longer be ordered and is deleted (BR-010, 24 h).
+
+    PublicFrame:
+      type: object
+      required: [id, name, widthMm, heightMm, priceCents, photoUrl]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Oak A4 }
+        widthMm: { type: integer, example: 210 }
+        heightMm: { type: integer, example: 297 }
+        priceCents: { type: integer, example: 4995 }
+        photoUrl: { type: string, example: /api/v1/frames/3f1c.../photo }
+
+    AdminFrame:
+      allOf:
+        - $ref: "#/components/schemas/PublicFrame"
+        - type: object
+          required: [stock, createdAt, updatedAt]
+          properties:
+            stock: { type: integer, minimum: 0 }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    Address:
+      type: object
+      required: [street, houseNumber, postalCode, city, country]
+      additionalProperties: false
+      properties:
+        street: { type: string, minLength: 1, maxLength: 200 }
+        houseNumber: { type: string, minLength: 1, maxLength: 20, example: 12a }
+        postalCode:
+          type: string
+          description: "NL: 4 digits + 2 letters (`1234 AB`, space optional); BE: 4 digits."
+          example: 1234 AB
+        city: { type: string, minLength: 1, maxLength: 100 }
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          example: NL
+          description: ISO 3166-1 alpha-2. Only NL and BE are delivered to (BR-007); any other well-formed code is answered 400 `country_not_supported` with `details` for `address.country`.
+
+    PlaceOrderRequest:
+      type: object
+      required: [drawingId, previewToken, frameId, customer, address, acceptedPhotoTerms]
+      additionalProperties: false
+      properties:
+        drawingId: { type: string, format: uuid }
+        previewToken: { type: string, minLength: 1, maxLength: 200 }
+        frameId: { type: string, format: uuid }
+        customer:
+          type: object
+          required: [name, email]
+          additionalProperties: false
+          properties:
+            name: { type: string, minLength: 1, maxLength: 200 }
+            email: { type: string, format: email, maxLength: 254 }
+        address: { $ref: "#/components/schemas/Address" }
+        acceptedPhotoTerms:
+          type: boolean
+          description: Must be true (BR-010).
+
+    OrderConfirmation:
+      type: object
+      required: [orderNumber, estimatedDeliveryDate, frameName, priceCents, customerName, address]
+      properties:
+        orderNumber: { type: string, pattern: "^FL-\\d{4}-\\d{4,}$", example: FL-2026-0042 }
+        estimatedDeliveryDate: { type: string, format: date, example: "2026-11-17" }
+        frameName: { type: string, example: Oak A4 }
+        priceCents: { type: integer, example: 4995 }
+        customerName: { type: string, description: As stored on the order. }
+        address:
+          $ref: "#/components/schemas/Address"
+          description: The delivery address as stored on the order (on a replay this is the original, not the retried request's).
+
+    OrderSummary:
+      type: object
+      required: [id, orderNumber, status, orderDate, estimatedDeliveryDate, customerName, frameName, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        orderNumber: { type: string, example: FL-2026-0042 }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        orderDate:
+          type: string
+          format: date
+          description: Calendar date in Europe/Amsterdam when the order was placed; earliest allowed delivery date.
+        estimatedDeliveryDate: { type: string, format: date }
+        customerName: { type: string }
+        frameName: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    OrderDetail:
+      allOf:
+        - $ref: "#/components/schemas/OrderSummary"
+        - type: object
+          required: [customerEmail, address, frameId, priceCents, drawing, photoAvailable, allowedNextStatuses, statusChangedAt]
+          properties:
+            customerEmail: { type: string }
+            address: { $ref: "#/components/schemas/Address" }
+            frameId: { type: string, format: uuid }
+            priceCents: { type: integer }
+            drawing:
+              type: object
+              required: [widthMm, heightMm, strokeCount, totalLengthMm]
+              properties:
+                widthMm: { type: number }
+                heightMm: { type: number }
+                strokeCount: { type: integer }
+                totalLengthMm: { type: number }
+            photoAvailable:
+              type: boolean
+              description: False once the original photo was deleted under BR-010.
+            allowedNextStatuses:
+              type: array
+              items: { $ref: "#/components/schemas/OrderStatus" }
+              description: The statuses this order may move to now (BR-009); empty for shipped and cancelled.
+            statusChangedAt: { type: string, format: date-time }
+
+    AdminSession:
+      type: object
+      required: [username]
+      properties:
+        username: { type: string }
+
+    Settings:
+      type: object
+      required: [leadTimeWorkingDays]
+      properties:
+        leadTimeWorkingDays:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: Standard lead time in working days, Monday to Friday (BR-008).
+
+    SettingsView:
+      allOf:
+        - $ref: "#/components/schemas/Settings"
+        - type: object
+          required: [drawingAreaWidthMm, drawingAreaHeightMm]
+          properties:
+            drawingAreaWidthMm:
+              type: number
+              readOnly: true
+              description: Drawing area from deployment configuration (BR-003); frames must be at least this size.
+            drawingAreaHeightMm: { type: number, readOnly: true }
