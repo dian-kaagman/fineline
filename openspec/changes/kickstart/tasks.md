@@ -39,7 +39,7 @@
 - [x] 3.9 Admin frames list, create, edit, photo and stock adjustment (UX-031; AC-039, AC-040, AC-041, AC-042, AC-043, AC-044)
 - [x] 3.10 Admin settings: standard lead time (AC-045, AC-046)
 - [x] 3.11 Dockerfile (build + unprivileged nginx serving the SPA and proxying `/api`, body size limits, `X-Forwarded-For` overwritten, security headers, JSON body for nginx's own 413) and `apps/web/README.md` (SR-001, SR-017, SR-019, SR-021; AC-065)
-- [x] 3.12 Automated accessibility checks (axe) on every screen and the 44 px / 24 px target sizes (UX-004, UX-012)
+- [x] 3.12 Automated accessibility checks (axe) on every screen; the 44 px / 24 px target sizes (UX-004) and rendered contrast are checked in a real browser in the UX review (UX-004, UX-012)
 
 ## 4. Integration (lead)
 
