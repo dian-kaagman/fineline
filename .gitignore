@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+
+# build output and caches
+dist/
+build/
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.tsbuildinfo
+.vite/
+
+# local data
+storage/
+data/
+*.log
+
+# environment
+.env
+.env.*
+!.env.example
+
+# editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
