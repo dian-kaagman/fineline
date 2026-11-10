@@ -16,13 +16,13 @@ The vocabulary for code, API and UI. Use the term in the first column; the code 
 | Photo | The image file a customer uploads (JPEG, PNG or HEIC). Personal data | picture, upload | `Photo` / `photos` | [pack: glossary.md], [pack: rules.md#BR-001] |
 | Drawing | The SVG line drawing generated from a photo: black unfilled pen strokes only, in millimetres, inside the drawing area, within the stroke budget | fineline, line art, sketch | `Drawing` / `drawings` | [pack: glossary.md], [pack: rules.md#BR-002] |
 | Preview | The drawing as shown to the customer before ordering. What the customer approves is exactly what is ordered and drawn | | `preview` (a drawing not yet attached to an order) | [pack: glossary.md], [pack: rules.md#BR-005] |
-| Photo access token | The secret that ties a fresh photo and its preview to the customer's browser session; without it the preview can't be seen or ordered | upload token | `accessToken` | [lead decision] |
+| Preview token | The secret, returned only to the customer who uploaded the photo, that ties a fresh photo and its preview to that customer; without it the preview can't be retrieved or ordered | upload token, photo access token | `previewToken` | [lead decision], [repo: docs/api/openapi.yaml] |
 | Stroke | One continuous pen movement: pen down, draw, pen up | line, path | `stroke` | [pack: glossary.md] |
 | Stroke budget | The maximum total stroke length (mm) and maximum number of strokes a drawing may have, so the arm draws it in reasonable time | drawing time limit | `strokeBudget` (`maxTotalLengthMm`, `maxStrokes`) | [pack: rules.md#BR-004] |
 | Drawing area | The part of the paper the arm may draw on: paper size minus a margin on every side. Default 180 x 267 mm (A4 portrait, 15 mm margin) | canvas | `drawingArea` (`widthMm`, `heightMm`) | [pack: glossary.md], [pack: rules.md#BR-003] |
 | Photo terms | The statement the customer agrees to before ordering: the photo is used only to make their drawing | photo consent | `photoTermsAccepted` | [pack: rules.md#BR-007], [pack: rules.md#BR-010] |
 
-**Watch out:** the pack uses "upload" as a synonym for *photo*. Do not introduce a separate "Upload" entity; a not-yet-ordered photo plus its preview is a `Photo` with a `preview` drawing and an `accessToken`. **"Single fineline drawing"** in the brief means one drawing per order, not one continuous stroke (see Q-27).
+**Watch out:** the pack uses "upload" as a synonym for *photo*. Do not introduce a separate "Upload" entity; in the API a photo and the drawing made from it are one `Drawing` record (with its photo file) plus a `previewToken`, and it is a preview until an order references it. **"Single fineline drawing"** in the brief means one drawing per order, not one continuous stroke (see Q-27).
 
 ## Frames and stock
 

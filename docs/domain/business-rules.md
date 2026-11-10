@@ -107,11 +107,11 @@ The order price is the price of the chosen frame, in EUR cents including VAT, as
 - **Example:** "Oak A4" costs 4995 cents: the order price is 4995 (shown as €49.95). The admin later changes Oak A4 to 5495: FL-2026-0042 still shows €49.95.
 
 ## BR-013 Fresh previews are private
-A photo and its preview that are not yet part of an order can be seen and ordered only with the photo access token of the browser session that uploaded it. Without the right token the photo and preview are reported as not found.
+A photo and its preview that are not yet part of an order can be retrieved and ordered only with the preview token given to the customer who uploaded it. Without the right token, or after the 24 hours (BR-010), the preview is reported as not available, with the same answer in both cases so nobody can tell whether it exists.
 - **Source:** [lead decision]; follows from [pack: rules.md#BR-010] and [pack: constraints.md#Legal and compliance]
 - **Enforced in:** backend
 - **Applies to slice:** yes
-- **Example:** the preview address opened in another browser, or an order request naming someone else's photo, gets "not found".
+- **Example:** an order request naming someone else's preview, or one that expired, gets "This preview is no longer available. Please upload your photo again."
 
 ## BR-014 No personal data in logs
 Application logs never contain customer names, email addresses, delivery addresses, photo or drawing contents, or the original file names of uploaded photos. Logs may contain internal IDs and order numbers.
@@ -140,6 +140,30 @@ The customer can't adjust the drawing (detail level, crop) in this kickstart. If
 - **Enforced in:** web and backend
 - **Applies to slice:** yes
 - **Example:** the customer uploads a dark photo, dislikes the preview, taps "Try another photo" and uploads a second photo, which gets a new preview.
+
+## Rule to scenario map
+
+Scenarios are in `openspec/changes/kickstart/specs/<capability>/spec.md`.
+
+| Rule | Scenarios |
+|---|---|
+| BR-001 | AC-001, AC-002, AC-003, AC-004 |
+| BR-002 | AC-005 |
+| BR-003 | AC-005, AC-021, AC-040 |
+| BR-004 | AC-006 |
+| BR-005 | AC-021, AC-031, AC-032 |
+| BR-006 | AC-013, AC-018, AC-020, AC-035, AC-039 to AC-044 |
+| BR-007 | AC-014, AC-015, AC-016, AC-018, AC-019 |
+| BR-008 | AC-018, AC-036, AC-037, AC-038, AC-045 to AC-049 |
+| BR-009 | AC-018, AC-029, AC-031 to AC-036 |
+| BR-010 | AC-010, AC-011, AC-012, AC-016, AC-027, AC-030 |
+| BR-011 | AC-024 to AC-028 |
+| BR-012 | AC-013, AC-018, AC-042 |
+| BR-013 | AC-010, AC-022 |
+| BR-014 | AC-023 |
+| BR-015 | AC-017 |
+| BR-016 | AC-007 |
+| BR-017 | AC-008, AC-009 |
 
 ## Out of slice
 No pack rule is out of slice. These neighbouring needs are not covered by the kickstart and are tracked in `open-questions.md`: payment and the price of the drawing (Q-8), deleting a customer's data on request (Q-24), a new drawing after ordering (Q-12), editing the drawing area in the admin UI (Q-2).
