@@ -29,6 +29,9 @@ info:
     - Validation errors (`validation_failed`) list `details` per field (dotted path) and never echo the input.
       Unknown fields in JSON bodies are rejected. A malformed UUID in a path answers 404.
     - 5xx responses are generic: `{ "error": { "code": "internal_error", "message": "Something went wrong" } }`.
+    - Any operation may also answer: 404 `not_found` (unknown route), 413 `payload_too_large` (JSON body over
+      64 KiB), 415 `unsupported_media_type` (wrong Content-Type), 500 `internal_error`. An empty body with
+      `Content-Type: application/json` is accepted where the operation has no request body.
     - The web app is served from the same origin as the API (the web server proxies `/api`).
 servers:
   - url: http://localhost:3000
@@ -62,7 +65,10 @@ paths:
                 properties:
                   status: { type: string, enum: [ok] }
         "503":
-          $ref: "#/components/responses/Error"
+          description: "`unavailable`: the database cannot be reached."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/v1/drawings:
     post:
@@ -243,6 +249,11 @@ paths:
               schema: { $ref: "#/components/schemas/AdminSession" }
         "401":
           description: "`invalid_credentials`: same response whether username or password is wrong."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "400":
+          description: "`validation_failed`: malformed body."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -687,7 +698,11 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/Settings" }
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/Settings"
+              unevaluatedProperties: false
+              description: Only `leadTimeWorkingDays`; unknown fields are rejected.
       responses:
         "200":
           description: Saved.
@@ -913,7 +928,6 @@ components:
     Settings:
       type: object
       required: [leadTimeWorkingDays]
-      additionalProperties: false
       properties:
         leadTimeWorkingDays:
           type: integer

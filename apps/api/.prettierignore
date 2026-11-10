@@ -1,0 +1,6 @@
+node_modules
+dist
+coverage
+storage
+src/db/migrations/meta
+package-lock.json
