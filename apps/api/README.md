@@ -148,6 +148,8 @@ house number, postal code and city with `[erased]`. It keeps the order number, p
 frame and country for the books. Running it again is safe ("already erased"). It prints only the
 order number. Afterwards the admin tool shows the order without a photo (410) or drawing (404
 `drawing_deleted`). Backups still hold the data until they expire (hosting, manual check).
+The order keeps its status: if it was still open, cancel it in the admin tool first (that also
+returns the frame to stock).
 
 ## Docker
 
