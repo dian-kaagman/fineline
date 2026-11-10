@@ -3,22 +3,23 @@
 # Open http://localhost:8080 (shop) and http://localhost:8080/admin (admin tool).
 #
 # Security notes (docs/security/threat-model.md SR-004, SR-005, SR-015, SR-021):
-# - only `web` publishes a port; `frontend` and `backend` are internal networks without internet access,
-#   so neither the API nor the worker can send photos anywhere (BR-016);
+# - only `web` publishes a port; `frontend`, `workers` and `data` are internal networks without internet
+#   access, so neither the API nor the worker can send photos anywhere (BR-016); the worker shares a network
+#   only with the API, never with the database;
 # - the storage volume is mounted into `api` only; the worker has no volumes and a read-only filesystem.
 
 name: fineline
 
 services:
   db:
-    image: postgres:16.6
+    image: postgres:16.10
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-fineline}
     volumes:
       - db-data:/var/lib/postgresql/data
-    networks: [backend]
+    networks: [data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -33,7 +34,7 @@ services:
       PORT: "8000"
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_CONCURRENT_CONVERSIONS: ${MAX_CONCURRENT_CONVERSIONS:-2}
-    networks: [backend]
+    networks: [workers]
     read_only: true
     tmpfs:
       - /tmp:size=64m
@@ -72,7 +73,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - storage:/data/storage
-    networks: [frontend, backend]
+    networks: [frontend, workers, data]
     depends_on:
       db:
         condition: service_healthy
@@ -101,7 +102,8 @@ services:
         condition: service_healthy
     read_only: true
     tmpfs:
-      - /tmp:size=32m
+      # nginx buffers request bodies here (up to 16 MB per photo upload; uploads are limited per client).
+      - /tmp:size=256m
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
@@ -115,7 +117,9 @@ networks:
   edge: {}
   frontend:
     internal: true
-  backend:
+  workers:
+    internal: true
+  data:
     internal: true
 
 volumes:

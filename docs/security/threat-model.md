@@ -390,6 +390,16 @@ Status: N-1 to N-7 and N-9 to N-12 accepted by the lead; N-8 resolved with a sep
 - **N-12 Worker decoding.** Design step 1 should state "decode with Pillow restricted to JPEG/PNG/HEIF, pixel-count check before decode, never `cv2.imdecode`" (SR-003). This is the most likely place for a real exploit in this system.
 - **N-13 Spec additions.** SR-001, 002, 003, 006, 007, 009, 011, 012, 013, 014, 016, 017, 018, 019 and 023 are observable; each has a suggested scenario above. AC-026/AC-027 should become "every admin route" (SR-014), and AC-023 should include passwords, tokens and DB errors (SR-018).
 
+## Corrections after the post-build security review
+
+The review (`reviews/security-review.md`, findings #1, #2 and #4 to #7) showed five requirements that were too weak as written. These amendments are part of the requirements; the original text above stays for the record.
+
+- **SR-010 (amended).** One scrypt verification with `N=2^17, r=8` allocates 128 MiB. At most **one** password verification runs at a time (a one-slot queue in the auth service; a second concurrent login waits briefly or gets 429). The API's memory limit has room for that one verification plus uploads in flight (finding #2: four parallel logins took the API from 150 MB to 659 MB, above `mem_limit: 512m`).
+- **SR-011 (amended).** The attempt is **counted before scrypt runs** (reserve, then keep the count on failure; a success may refund it), so concurrent requests can't get past the limit. Checking the counter and counting only after scrypt lets any number of parallel guesses through (finding #1: 40 parallel wrong passwords from one address all got scrypt and 401, none 429). Verify with a test that sends the requests in parallel.
+- **SR-004 (amended).** Size the worker's memory from measurements, not from the file size: one 49 MP RGBA PNG (190 KB on disk) peaks at about 380 MB in the worker, two in parallel at about 1 GB (finding #4; the API side is finding #6). Either refuse decoded sizes above a byte budget (`width x height x bands`) before `load()`, or run one conversion at a time, or raise `mem_limit` to fit `MAX_CONCURRENT_CONVERSIONS` worst cases. The API also takes its conversion slot (or a separate upload slot) **before** it reads a 15 MB body, so the number of buffered uploads is bounded by the slot count, not by the hourly rate limit.
+- **SR-001 / SR-021 (amended).** nginx buffers request bodies to its temp directory (`/tmp/client_temp` in `nginx-unprivileged`), which is the `web` container's tmpfs. That tmpfs must hold the expected concurrent uploads (16 MB each), and the upload locations need `limit_conn` per client address and a short `client_body_timeout`, so a few stalled uploads can't fill it (finding #5: three stalled 10 MB uploads made every further upload fail with nginx 500 on a 32 MB tmpfs).
+- **SR-005 / SR-021 (amended networks).** The worker must not share a network with the database. Use `workers` (`internal: true`: api, worker) and `data` (`internal: true`: api, db) instead of one `backend` network; a compromised worker then reaches only the API. `POSTGRES_PASSWORD` must not be left at the `.env.example` placeholder (finding #7).
+
 ## Deferred
 
 | Item | Why accepted for now | Revisit when |

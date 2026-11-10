@@ -3,7 +3,8 @@
 // Runs `docker compose config --format json` (needs only the Docker CLI, not a daemon) and asserts:
 // - only `web` publishes ports; the worker and db publish none;
 // - the worker is read-only, has no volumes, drops all capabilities and has memory/CPU/pids limits;
-// - api and worker are attached only to internal networks (no internet access, BR-016);
+// - api, worker and db are attached only to internal networks (no internet access, BR-016),
+//   and the worker shares no network with the database;
 // - the storage volume is mounted into `api` only.
 import { execFileSync } from "node:child_process";
 
@@ -40,6 +41,10 @@ const worker = services.worker;
 expect(worker.read_only === true, "worker must be read_only");
 expect((worker.volumes ?? []).length === 0, "worker must have no volumes");
 expect(Boolean(worker.mem_limit) && Boolean(worker.cpus) && Boolean(worker.pids_limit), "worker needs mem, cpu and pids limits");
+
+const workerNets = Object.keys(worker.networks ?? {});
+const dbNets = Object.keys(services.db.networks ?? {});
+expect(!workerNets.some((n) => dbNets.includes(n)), "worker must not share a network with db");
 
 for (const name of ["api", "worker", "db"]) {
   const attached = Object.keys(services[name].networks ?? {});

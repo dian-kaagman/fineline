@@ -74,7 +74,7 @@ jobs:
       - name: Audit locked dependencies
         run: |
           uv export --frozen --no-dev --no-hashes --no-emit-project --format requirements-txt > /tmp/requirements.txt
-          uvx pip-audit --strict -r /tmp/requirements.txt
+          uvx pip-audit@2.10.1 --strict -r /tmp/requirements.txt
 
   web:
     name: Web (apps/web)
@@ -120,7 +120,7 @@ jobs:
       - run: npx -y @fission-ai/openspec@1 validate --all --strict --no-interactive
         env:
           OPENSPEC_TELEMETRY: "0"
-      - run: npx -y @redocly/cli@2 lint docs/api/openapi.yaml docs/api/worker-openapi.yaml
+      - run: npx -y @redocly/cli@2.77.0 lint docs/api/openapi.yaml docs/api/worker-openapi.yaml
 
   secrets:
     name: Secret scan
