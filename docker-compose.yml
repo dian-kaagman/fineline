@@ -1,0 +1,118 @@
+# Fineline local stack: database, conversion worker, API and web (nginx).
+# Usage: cp .env.example .env, fill in the secrets (see README), then `docker compose up --build`.
+# Open http://localhost:8080 (shop) and http://localhost:8080/admin (admin tool).
+#
+# Security notes (docs/security/threat-model.md SR-004, SR-005, SR-015, SR-021):
+# - only `web` publishes a port; `frontend` and `backend` are internal networks without internet access,
+#   so neither the API nor the worker can send photos anywhere (BR-016);
+# - the storage volume is mounted into `api` only; the worker has no volumes and a read-only filesystem.
+
+name: fineline
+
+services:
+  db:
+    image: postgres:16.6
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-fineline}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  worker:
+    build: ./apps/worker
+    environment:
+      WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN in .env}
+      PORT: "8000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MAX_CONCURRENT_CONVERSIONS: ${MAX_CONCURRENT_CONVERSIONS:-2}
+    networks: [backend]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    cpus: 2.0
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./apps/api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-fineline}
+      PORT: "3000"
+      STORAGE_DIR: /data/storage
+      WORKER_URL: http://worker:8000
+      WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN in .env}
+      WORKER_TIMEOUT_MS: ${WORKER_TIMEOUT_MS:-30000}
+      MAX_CONCURRENT_CONVERSIONS: ${MAX_CONCURRENT_CONVERSIONS:-2}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME in .env}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH in .env}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-8}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUST_PROXY: "1"
+      DRAWING_AREA_WIDTH_MM: ${DRAWING_AREA_WIDTH_MM:-180}
+      DRAWING_AREA_HEIGHT_MM: ${DRAWING_AREA_HEIGHT_MM:-267}
+      MAX_STROKES: ${MAX_STROKES:-1500}
+      MAX_TOTAL_STROKE_LENGTH_MM: ${MAX_TOTAL_STROKE_LENGTH_MM:-25000}
+      RETENTION_SWEEP_INTERVAL_MS: ${RETENTION_SWEEP_INTERVAL_MS:-3600000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - storage:/data/storage
+    networks: [frontend, backend]
+    depends_on:
+      db:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-hello@example.com}
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    networks: [edge, frontend]
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  frontend:
+    internal: true
+  backend:
+    internal: true
+
+volumes:
+  db-data: {}
+  storage: {}

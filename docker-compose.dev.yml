@@ -1,0 +1,13 @@
+# Development override: publishes PostgreSQL on 127.0.0.1 only, so the parts can run natively
+# (npm run dev / uv run) against the compose database.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [backend, devdb]
+
+networks:
+  # The backend network is internal (no host port mapping possible), so the dev database also joins
+  # a normal bridge network to be reachable from the host.
+  devdb: {}
