@@ -15,16 +15,17 @@ from fineline_worker.svg import DrawingArea
 
 PHOTO_FIELD = "photo"
 MAX_FIELD_BYTES = 1024
+MIN_AREA_SIDE_MM = 1.0
 MAX_AREA_SIDE_MM = 5000.0
 
-PositiveMm = Annotated[float, Field(gt=0, le=MAX_AREA_SIDE_MM, allow_inf_nan=False)]
+AreaSideMm = Annotated[float, Field(ge=MIN_AREA_SIDE_MM, le=MAX_AREA_SIDE_MM, allow_inf_nan=False)]
 
 
 class ConvertFields(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    area_width_mm: PositiveMm = Field(alias="areaWidthMm")
-    area_height_mm: PositiveMm = Field(alias="areaHeightMm")
+    area_width_mm: AreaSideMm = Field(alias="areaWidthMm")
+    area_height_mm: AreaSideMm = Field(alias="areaHeightMm")
     max_strokes: int = Field(alias="maxStrokes", ge=1, le=100_000)
     max_total_length_mm: float = Field(
         alias="maxTotalLengthMm", gt=0, le=10_000_000, allow_inf_nan=False

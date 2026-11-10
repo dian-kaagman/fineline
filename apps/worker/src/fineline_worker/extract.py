@@ -1,4 +1,4 @@
-"""Line extraction: contrast equalisation, smoothing, edge map and tone masks."""
+"""Line extraction: brightness range, contrast equalisation, smoothing, edge map and tone masks."""
 
 from dataclasses import dataclass
 
@@ -20,12 +20,35 @@ class PreparedImage:
     median: float
 
 
+@dataclass(frozen=True)
+class EdgeEstimate:
+    """A cheap preview of a detail level: edge pieces long enough to become strokes."""
+
+    strokes: int
+    length_px: float
+
+
+def stretch_brightness(gray: GrayImage) -> GrayImage:
+    """Spread the photo's own brightness range over 0-255 (faded or dark photos get contrast).
+
+    The gain is capped so the noise of a nearly uniform photo is not blown up into lines.
+    """
+    low, high = np.percentile(gray, [params.STRETCH_LOW_PERCENTILE, params.STRETCH_HIGH_PERCENTILE])
+    spread = float(high - low)
+    if spread <= 0:
+        return gray
+    gain = min(params.STRETCH_MAX_GAIN, 255.0 / spread)
+    middle = (float(low) + float(high)) / 2
+    table = np.clip((np.arange(256) - middle) * gain + 127.5, 0, 255).astype(np.uint8)
+    return np.asarray(cv2.LUT(gray, table), dtype=np.uint8)
+
+
 def prepare(gray: GrayImage) -> PreparedImage:
     clahe = cv2.createCLAHE(
         clipLimit=params.CLAHE_CLIP_LIMIT,
         tileGridSize=(params.CLAHE_TILE_GRID, params.CLAHE_TILE_GRID),
     )
-    equalised = clahe.apply(gray)
+    equalised = clahe.apply(stretch_brightness(gray))
     smooth = cv2.bilateralFilter(
         equalised,
         params.BILATERAL_DIAMETER_PX,
@@ -51,6 +74,31 @@ def edge_map(prepared: PreparedImage, canny_multiplier: float) -> GrayImage:
         prepared.smooth, low * canny_multiplier, high * canny_multiplier, L2gradient=True
     )
     return np.asarray(edges, dtype=np.uint8)
+
+
+def estimate_edges(edges: GrayImage, min_stroke_length_px: float) -> EdgeEstimate:
+    """Count connected edge pieces of at least the minimum stroke length (pixels ~ length)."""
+    _, _, stats, _ = cv2.connectedComponentsWithStats(edges, connectivity=8)
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    long_enough = areas >= min_stroke_length_px
+    return EdgeEstimate(strokes=int(long_enough.sum()), length_px=float(areas[long_enough].sum()))
+
+
+def tone_thresholds(prepared: PreparedImage, percentiles: tuple[int, ...]) -> list[int]:
+    """Brightness levels at the photo's own darkness percentiles.
+
+    A level is skipped unless it is clearly darker than the median, so nearly uniform photos
+    (and noise) don't get shading loops.
+    """
+    if not percentiles:
+        return []
+    values = np.percentile(prepared.tone, [*percentiles, 50])
+    median = float(values[-1])
+    return [
+        round(float(value))
+        for value in values[:-1]
+        if median - float(value) >= params.TONE_MIN_CONTRAST
+    ]
 
 
 def tone_mask(prepared: PreparedImage, level: int) -> GrayImage:

@@ -63,6 +63,11 @@ def upscale(image: RGBImage, width: int, height: int) -> RGBImage:
     return np.asarray(resized, dtype=np.uint8)
 
 
+def pure_noise(width: int, height: int, *, seed: int = 0) -> RGBImage:
+    """Random pixels: the most edge pieces per pixel a photo can have (worst case for time)."""
+    return np.random.default_rng(seed).integers(0, 256, (height, width, 3), dtype=np.uint8)
+
+
 def busy_texture(width: int, height: int, *, seed: int = 2) -> RGBImage:
     """A crowd-like texture with thousands of small high-contrast shapes (busts the budget)."""
     rng = np.random.default_rng(seed)
@@ -94,9 +99,67 @@ def png(image: RGBImage) -> bytes:
     return encode(image, "PNG", compress_level=1)
 
 
+def png_rgba(image: RGBImage) -> bytes:
+    """An RGBA PNG (fully opaque): the most memory per pixel of the accepted formats."""
+    alpha = np.full(image.shape[:2], 255, dtype=np.uint8)
+    buffer = io.BytesIO()
+    Image.fromarray(np.dstack([image, alpha]), "RGBA").save(buffer, format="PNG", compress_level=1)
+    return buffer.getvalue()
+
+
 def heic(image: RGBImage) -> bytes:
     # The x265 "ultrafast" preset keeps a 12 MP encode under a second (the default takes ~14 s).
     return encode(image, "HEIF", quality=60, enc_params={"preset": "ultrafast"})
+
+
+def encode_with(encoder: Encoder, image: RGBImage, **save_options: object) -> bytes:
+    """Encode like `encoder` (jpeg, png or heic) with extra save options such as exif."""
+    formats: dict[str, tuple[str, dict[str, object]]] = {
+        "jpeg": ("JPEG", {"quality": 90}),
+        "png": ("PNG", {"compress_level": 1}),
+        "heic": ("HEIF", {"quality": 60, "enc_params": {"preset": "ultrafast"}}),
+    }
+    fmt, options = formats[encoder.__name__]
+    return encode(image, fmt, **options, **save_options)
+
+
+def png16_gray(values: npt.NDArray[np.uint16]) -> bytes:
+    """A 16-bit grayscale PNG (Pillow mode I;16)."""
+    return encode(values, "PNG")  # type: ignore[arg-type]
+
+
+def png16_rgb(image: RGBImage) -> bytes:
+    """A 16-bit-per-channel RGB PNG (Pillow can't write these, OpenCV's encoder can)."""
+    bgr16 = cv2.cvtColor(image, cv2.COLOR_RGB2BGR).astype(np.uint16) * 257
+    ok, buffer = cv2.imencode(".png", bgr16)
+    assert ok
+    return bytes(buffer.tobytes())
+
+
+def exif_text_resolution(orientation: int) -> bytes:
+    """EXIF with a valid orientation but YResolution stored as text instead of a rational."""
+    tiff = b"II*\x00" + struct.pack("<I", 8) + struct.pack("<H", 2)
+    tiff += struct.pack("<HHIHH", 0x0112, 3, 1, orientation, 0)  # SHORT orientation
+    tiff += struct.pack("<HHII", 0x011B, 2, 5, 38)  # ASCII YResolution at offset 38
+    tiff += struct.pack("<I", 0) + b"desc\x00"
+    return b"Exif\x00\x00" + tiff
+
+
+def heic_corrupt_stream() -> bytes:
+    """A HEIC whose coded image data is damaged: pillow-heif raises EOFError on load."""
+    data = bytearray(heic(flat(900, 1200, 128)))
+    data[data.find(b"mdat") + 6] = 33
+    return bytes(data)
+
+
+def heic_declaring_smaller_size() -> bytes:
+    """A HEIC whose header (ispe) declares a smaller height than its coded image.
+
+    pillow-heif raises RuntimeError ("Security limit exceeded") on load.
+    """
+    data = bytearray(heic(flat(900, 1200, 128)))
+    data[data.find(b"ispe") + 15] = 44  # height 1200 (0x04B0) becomes 1068 (0x042C)
+    return bytes(data)
 
 
 def png_header_only(width: int, height: int) -> bytes:

@@ -56,6 +56,7 @@ def test_ac054_third_conversion_is_refused_quickly_while_two_are_running() -> No
         waited = time.perf_counter() - started
         assert refused.status_code == 503
         assert error_code(refused) == "busy"
+        assert refused.headers["Retry-After"] == "5"
         assert waited < 2
 
         converter.release.set()

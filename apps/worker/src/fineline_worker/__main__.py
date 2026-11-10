@@ -3,6 +3,7 @@
 import os
 import sys
 
+import cv2
 import uvicorn
 
 from fineline_worker.app import create_app
@@ -17,6 +18,8 @@ def main() -> None:
         print(f"fineline-worker: invalid configuration: {error}", file=sys.stderr)
         sys.exit(2)
     configure_logging(settings.log_level)
+    # One OpenCV thread per conversion: parallelism comes from the conversion slots.
+    cv2.setNumThreads(1)
     uvicorn.run(
         create_app(settings),
         # Inside the container the worker must listen on the private network; it is never

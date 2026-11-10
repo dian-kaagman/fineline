@@ -21,6 +21,8 @@ from fineline_worker.pipeline import ConversionRequest, ConversionResult, conver
 MAX_BODY_BYTES = 16 * 1024 * 1024
 # How long a request waits for a free conversion slot before it is answered `busy` (SR-004).
 SLOT_WAIT_SECONDS = 1.0
+# Suggested wait sent with 503 busy: about one typical conversion.
+BUSY_RETRY_AFTER_SECONDS = 5
 
 Converter = Callable[[bytes, ConversionRequest], ConversionResult]
 
@@ -98,7 +100,10 @@ def create_app(settings: Settings, converter: Converter = convert_photo) -> Fast
         assert isinstance(error, WorkerError)
         level = logging.WARNING if isinstance(error, Unauthenticated) else logging.INFO
         logger.log(level, "request refused", extra={"code": error.code})
-        return error_response(error.status, error.code, error.message)
+        response = error_response(error.status, error.code, error.message)
+        if isinstance(error, Busy):
+            response.headers["Retry-After"] = str(BUSY_RETRY_AFTER_SECONDS)
+        return response
 
     @app.exception_handler(HTTPException)
     async def http_error(_: Request, error: Exception) -> JSONResponse:

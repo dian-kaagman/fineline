@@ -53,14 +53,14 @@ def test_closed_edge_loop_is_traced_once() -> None:
 
 def test_tone_contour_of_an_all_dark_image_draws_no_frame() -> None:
     mask = np.full((200, 300), 255, dtype=np.uint8)
-    assert trace_tone(mask, tone_exclusion(np.zeros_like(mask))) == []
+    assert trace_tone(mask, tone_exclusion(np.zeros_like(mask)), 2.0) == []
 
 
 def test_tone_contour_keeps_inner_shapes_and_drops_border_segments() -> None:
     mask = np.zeros((200, 300), dtype=np.uint8)
     mask[:, :150] = 255  # dark left half touches three borders
     cv2.circle(mask, (230, 100), 30, 255, -1)  # dark spot in the middle of the right half
-    strokes = trace_tone(mask, tone_exclusion(np.zeros_like(mask)))
+    strokes = trace_tone(mask, tone_exclusion(np.zeros_like(mask)), 2.0)
     border = params.TONE_BORDER_PX
     for stroke in strokes:
         assert stroke[:, 0].min() >= border
@@ -78,4 +78,4 @@ def test_tone_contour_next_to_an_edge_is_not_drawn_twice() -> None:
     cv2.circle(mask, (100, 100), 50, 255, -1)
     edges = np.zeros_like(mask)
     cv2.circle(edges, (100, 100), 51, 255, 1)
-    assert trace_tone(mask, tone_exclusion(edges)) == []
+    assert trace_tone(mask, tone_exclusion(edges), 2.0) == []

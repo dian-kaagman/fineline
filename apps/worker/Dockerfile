@@ -20,9 +20,14 @@ RUN groupadd --system --gid 10001 worker \
     && useradd --system --uid 10001 --gid worker --no-create-home --shell /usr/sbin/nologin worker
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
+# One OpenCV/BLAS thread per conversion and at most two malloc arenas keep the thread count
+# (pids limit) and the retained heap small (SR-004, SR-021).
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MALLOC_ARENA_MAX=2 \
     PORT=8000
 USER worker
 EXPOSE 8000

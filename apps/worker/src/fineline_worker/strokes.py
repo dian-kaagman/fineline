@@ -15,6 +15,20 @@ def polyline_length(polyline: Polyline) -> float:
     return float(np.sum(np.hypot(*np.diff(polyline, axis=0).T)))
 
 
+def polyline_lengths(polylines: list[Polyline]) -> npt.NDArray[np.float64]:
+    """Lengths of many polylines in one vectorised pass (no Python loop per point)."""
+    if not polylines:
+        return np.zeros(0)
+    sizes = np.fromiter((len(p) for p in polylines), dtype=np.int64, count=len(polylines))
+    points = np.concatenate(polylines)
+    steps = np.zeros(len(points))
+    steps[1:] = np.hypot(*np.diff(points, axis=0).T)
+    starts = np.cumsum(sizes) - sizes
+    steps[starts] = 0.0  # the step into the first point of a polyline belongs to no polyline
+    totals = np.cumsum(steps)
+    return np.asarray(totals[starts + sizes - 1] - totals[starts], dtype=np.float64)
+
+
 def simplify(polyline: Polyline, epsilon: float) -> Polyline:
     """Ramer-Douglas-Peucker simplification of an open polyline."""
     if len(polyline) < 3:
@@ -25,7 +39,8 @@ def simplify(polyline: Polyline, epsilon: float) -> Polyline:
 
 
 def drop_shorter_than(polylines: list[Polyline], min_length: float) -> list[Polyline]:
-    return [p for p in polylines if polyline_length(p) >= min_length]
+    lengths = polyline_lengths(polylines)
+    return [p for p, length in zip(polylines, lengths, strict=True) if length >= min_length]
 
 
 def join_near_ends(polylines: list[Polyline], max_gap: float) -> list[Polyline]:
@@ -62,8 +77,7 @@ def join_near_ends(polylines: list[Polyline], max_gap: float) -> list[Polyline]:
             used[best[0]] = True
         return best
 
-    lengths = [polyline_length(p) for p in polylines]
-    order = sorted(range(len(polylines)), key=lambda i: (-lengths[i], i))
+    order = np.argsort(-polyline_lengths(polylines), kind="stable").tolist()
     joined: list[Polyline] = []
     for index in order:
         if used[index]:

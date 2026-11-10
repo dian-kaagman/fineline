@@ -134,6 +134,31 @@ def test_other_files_are_unreadable(client: TestClient, photo: bytes) -> None:
     assert error_code(response) == "photo_unreadable"
 
 
+@pytest.mark.parametrize(
+    "photo",
+    [images.heic_corrupt_stream(), images.heic_declaring_smaller_size()],
+    ids=["heic-eof", "heic-size-mismatch"],
+)
+def test_damaged_photo_is_unreadable_not_a_server_error(client: TestClient, photo: bytes) -> None:
+    response = post_convert(client, photo)
+    assert response.status_code == 400
+    assert error_code(response) == "photo_unreadable"
+
+
+def test_photo_with_damaged_exif_is_converted(client: TestClient) -> None:
+    portrait = images.synthetic_portrait(1600, 1200)
+    photo = images.jpeg(portrait, exif=images.exif_text_resolution(6))
+    assert post_convert(client, photo).status_code == 200
+
+
+def test_ac005_area_is_never_rounded_up(client: TestClient) -> None:
+    response = post_convert(client, portrait_jpeg(), areaWidthMm="180.555", areaHeightMm="267.449")
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["widthMm"], body["heightMm"]) == (180.55, 267.44)
+    assert 'width="180.55mm" height="267.44mm"' in body["svg"]
+
+
 def test_ac008_entirely_black_photo_has_no_drawable_content(client: TestClient) -> None:
     response = post_convert(client, images.jpeg(images.flat(1600, 1200, 0)))
     assert response.status_code == 422
@@ -144,6 +169,7 @@ def test_ac008_entirely_black_photo_has_no_drawable_content(client: TestClient) 
     "overrides",
     [
         {"areaWidthMm": "0"},
+        {"areaWidthMm": "0.5"},
         {"areaWidthMm": "-180"},
         {"areaHeightMm": "nan"},
         {"areaHeightMm": "inf"},

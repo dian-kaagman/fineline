@@ -42,8 +42,8 @@ curl -s -H "Authorization: Bearer $WORKER_TOKEN" \
 | Typecheck (mypy strict) | `uv run mypy` |
 | Tests (all, includes the performance test) | `uv run pytest` |
 | Tests without the performance test | `uv run pytest -m "not perf"` |
-| Performance timings | `uv run pytest -m perf -s` |
-| Preview drawings of your own photos | `uv run python scripts/preview.py out/ photo1.jpg photo2.heic` |
+| Performance and memory numbers | `uv run pytest -m perf -s` |
+| Preview drawings of your own photos | `uv run python scripts/preview.py out/ photo1.jpg photo2.heic` (`out/` is git-ignored) |
 | Add a dependency | `uv add <package>` (dev tools: `uv add --dev <package>`) |
 
 ## Configuration
@@ -56,7 +56,7 @@ variable when one is wrong (SR-020). See `.env.example`.
 | `WORKER_TOKEN` | (required) | Shared secret with the API, at least 32 characters; the `.env.example` placeholder is refused. Generate with `openssl rand -base64 32`. |
 | `PORT` | `8000` | HTTP port. |
 | `LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info` or `debug` (Python names also work). |
-| `MAX_CONCURRENT_CONVERSIONS` | `2` | Conversions at the same time; a request that gets no slot within about 1 s is answered 503 `busy` (SR-004). |
+| `MAX_CONCURRENT_CONVERSIONS` | `2` | Conversions at the same time; a request that gets no slot within about 1 s is answered 503 `busy` with `Retry-After: 5` (SR-004). |
 
 The drawing area and stroke budget are not worker configuration: the API sends them with every
 request, so the API's configuration is the one place that owns them.
@@ -67,7 +67,7 @@ request, so the API's configuration is the one place that owns them.
 src/fineline_worker/
   params.py       every tuning constant (see "Tuning the drawing")
   decode.py       Pillow-only decoding: JPEG/PNG/HEIF, pixel limit before decoding, EXIF orientation
-  extract.py      contrast equalisation (CLAHE), smoothing (bilateral), Canny edge map, tone masks
+  extract.py      brightness stretch, CLAHE, bilateral smoothing, Canny edge map, edge preview, tone masks
   trace.py        edge map -> open polylines (each pixel once); tone contours without border/edge parts
   strokes.py      simplification (RDP), joining near ends, short-stroke filter, pen-travel order
   svg.py          fit and centre in the drawing area, SVG writer (one black path per stroke)
@@ -91,20 +91,31 @@ is tested through FastAPI's test client.
    30,000 px image bomb is refused before any pixel is decoded (`photo_too_many_pixels`, over
    50 MP). The shortest side must be at least `minShortSidePx` (default 800,
    `photo_too_small`). OpenCV never sees raw bytes (a Ruff rule bans `cv2.imdecode`/`imread`).
-   The photo is reduced to a 1000 px working image (JPEG draft mode makes this cheap), EXIF
-   orientation is applied and only the pixels go on, so no metadata survives.
-2. **Prepare**: grayscale, CLAHE, bilateral filter; a strongly blurred copy for tone contours.
+   Any decoder failure (damaged file, mismatched HEIF header) is `photo_unreadable`; damaged
+   EXIF only means no orientation fix. The photo is reduced to a 1000 px 8-bit grayscale working
+   image: JPEGs are decoded at reduced size (draft mode); PNG and HEIF are decoded at full size,
+   one large one at a time, and converted in strips (16-bit samples scaled by bit depth,
+   transparency drawn on white), so a 50 MP PNG costs about one byte array of the photo, not
+   several. EXIF orientation is applied and only the pixels go on, so no metadata survives.
+2. **Prepare**: stretch the photo's own brightness range (1st to 99th percentile, gain at most
+   8x) so faded, hazy or dark photos are drawn like normal ones; CLAHE; bilateral filter; a
+   strongly blurred copy for tone contours.
 3. **Lines**: Canny edges traced as open polylines (each edge pixel drawn once, not out and
-   back), plus iso-brightness contours of the blurred image for hair and shadows, without the
-   parts along the image border (no frame around dark backgrounds) or right next to an edge (no
-   double outlines).
+   back), plus iso-brightness contours of the blurred image for hair and shadows at the photo's
+   own darkness percentiles, without the parts along the image border (no frame around dark
+   backgrounds) or right next to an edge (no double outlines).
 4. **Clean up**: simplify, drop tiny fragments, join ends closer than `JOIN_GAP_PX`, drop
    strokes shorter than the level's minimum. Fewer than 20 strokes or under 0.5 m at the finest
    level is `no_drawable_content` (422).
-5. **Fit**: scale uniformly and centre in the area; coordinates rounded to 0.01 mm.
+5. **Fit**: scale uniformly and centre in the area (an area with more than two decimals is
+   rounded down, never up); coordinates rounded to 0.01 mm.
 6. **Budget loop** (BR-004): try the detail levels from fine to coarse until the drawing fits
-   `maxStrokes` and `maxTotalLengthMm`; the number of levels caps the loop. If even the coarsest
-   level is over budget, the shortest strokes are dropped until it fits. Never over budget.
+   `maxStrokes` and `maxTotalLengthMm`; the number of levels caps the loop. Levels whose cheap
+   edge preview is far over budget are skipped without tracing, and a level with more than
+   `MAX_FRAGMENTS_PER_LEVEL` pieces is never cleaned up piece by piece, so busy photos (noise,
+   gravel, crowds) take about a second. If the coarsest level is still over budget, or a coarser
+   level comes out empty, the last level with lines is kept and its shortest strokes are dropped
+   until it fits. Never over budget.
 7. **Order and write**: greedy nearest-neighbour order (strokes reversed when that is shorter)
    and one `<path d="M x y L x y ..." fill="none" stroke="#000" stroke-width="0.5"
    stroke-linecap="round" stroke-linejoin="round"/>` per stroke. The root `<svg>` is always the
@@ -126,7 +137,9 @@ the tests check the drawing rules, the budget and the no-content rule.
 | `CANNY_MAX_LOW` / `CANNY_MAX_HIGH` | Ceilings of the edge thresholds; keep soft features in bright photos | | bright photos losing the nose or lips |
 | `CLAHE_CLIP_LIMIT` | Local contrast boost; brings out faces in shadow | backlit or shadowed faces | blotchy skin lines |
 | `BILATERAL_*` | Smoothing that keeps outlines: removes skin texture and noise | fewer small wiggles | sharper fine detail |
-| `tone_levels` per level | Brightness levels (0-255) traced as shading contours; fewer levels = less shading | more hair and shadow shapes | a cleaner, outline-only look |
+| `STRETCH_*` | Brightness stretch before everything else; `STRETCH_MAX_GAIN` limits how much a faded photo is boosted | faded or hazy photos | grainy near-blank photos turning into lines |
+| `tone_percentiles` per level | Darkness percentiles traced as shading contours (12 = outline of the darkest 12 %); fewer = less shading | more hair and shadow shapes | a cleaner, outline-only look |
+| `TONE_MIN_CONTRAST` | A shading level is only used when it is this much darker than the median | fewer shading loops in flat photos | shading in low-contrast photos |
 | `TONE_BLUR_SIGMA_PX` | How smooth the shading contours are | rounder, calmer shading lines | shading that follows detail |
 | `TONE_EDGE_CLEARANCE_PX` | Removes shading lines that run next to an edge | fewer doubled outlines | more shading kept (0 keeps all) |
 | `simplify_epsilon_px` per level | Allowed deviation when straightening lines | smaller SVGs, faster drawing | smoother curves |
@@ -134,6 +147,8 @@ the tests check the drawing rules, the budget and the no-content rule.
 | `JOIN_GAP_PX` | Joins stroke ends this close (fewer pen lifts) | fewer pen lifts | no unwanted connections |
 | `WORKING_LONG_SIDE_PX` | Working image size: finer detail but slower and more strokes | detail | speed |
 | `NO_CONTENT_MIN_STROKES` / `NO_CONTENT_MIN_LENGTH_MM` | When a photo counts as having no drawable content | refusing more near-blank photos | accepting sparse drawings |
+| `SKIP_LEVEL_OVER_BUDGET_FACTOR` / `MAX_FRAGMENTS_PER_LEVEL` | Speed guards for busy photos (not about looks) | | |
+| `LARGE_DECODE_PIXELS` | PNG/HEIF photos above this are decoded one at a time (memory) | | less memory, more waiting |
 
 Pixel values refer to the 1000 px working image; at the default A4 area one working pixel is
 about 0.18 to 0.24 mm on paper. The first detail level is what most portraits get; the later
@@ -151,6 +166,12 @@ levels only apply when a busy photo is over budget, so keep them progressively c
 - Stateless: nothing is written to disk except the framework's spooling of uploads over 1 MB to
   `/tmp`. In Docker give `/tmp` a tmpfs of at least 64 MB (two conversions in flight, plus
   requests waiting for a slot, each up to 16 MB).
+- Memory (SR-004), measured by `tests/test_memory.py` (`uv run pytest -m perf -s`): two
+  conversions at once of the largest accepted photos peak at about 300 MB of process memory
+  for 49-50 MP RGBA/LA/palette PNGs and about 470 MB for 48 MP HEICs (one large PNG/HEIF decode
+  at a time; the second waits for it). A 1 GiB container limit leaves ample room.
+- Thread pools are bounded: OpenCV runs one thread per conversion, and `OMP_NUM_THREADS` /
+  `OPENBLAS_NUM_THREADS` default to 1 (set in the package and the Dockerfile).
 
 ## Docker
 
